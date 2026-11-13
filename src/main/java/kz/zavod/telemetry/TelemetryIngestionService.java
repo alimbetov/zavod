@@ -6,6 +6,7 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -54,8 +55,11 @@ public class TelemetryIngestionService {
         var binding=requireBinding(siteId,blueprintId,revision,signalId);
         if(binding.sourceKind()!=SourceKind.SIMULATED)
             throw new IllegalArgumentException("OT_INGESTION_NOT_QUALIFIED");
-        Instant received=Instant.now();
-        if(incoming.sourceTime().isAfter(received.plusSeconds(30)))
+        Instant received=Instant.now().truncatedTo(ChronoUnit.MICROS);
+        // PostgreSQL timestamptz persists microseconds, whereas Instant carries nanos.
+        // Normalize BEFORE insert, dedup and replay payload comparison.
+        Instant observed=incoming.sourceTime().truncatedTo(ChronoUnit.MICROS);
+        if(observed.isAfter(received.plusSeconds(30)))
             throw new IllegalArgumentException("FUTURE_SIGNAL_TIMESTAMP");
         if(EngineeringUnits.dimension(incoming.unitCode())!=
                 EngineeringUnits.dimension(binding.unitCode()))
@@ -66,7 +70,7 @@ public class TelemetryIngestionService {
                 "(signal_id,source_event_id,source_kind,sample_value,unit_code,source_time,received_at,quality) "+
                 "values (?,?,?,?,?,?,?,?) on conflict (signal_id,source_event_id) do nothing",
                 signalId.toString(),incoming.eventId(),SourceKind.SIMULATED.name(),
-                incoming.value(),incoming.unitCode(),utc(incoming.sourceTime()),utc(received),
+                incoming.value(),incoming.unitCode(),utc(observed),utc(received),
                 incoming.quality().name());
 
         TelemetrySample stored=jdbc.queryForObject(
@@ -78,7 +82,7 @@ public class TelemetryIngestionService {
         if(stored.sourceKind()!=SourceKind.SIMULATED
                 ||stored.value().compareTo(incoming.value())!=0
                 ||!stored.unitCode().equals(incoming.unitCode())
-                ||!stored.sourceTime().equals(incoming.sourceTime())
+                ||!stored.sourceTime().equals(observed)
                 ||stored.quality()!=incoming.quality())
             throw new TelemetryIngestionConflict("EVENT_ID_PAYLOAD_CONFLICT");
         return new Receipt(stored,inserted==0);
