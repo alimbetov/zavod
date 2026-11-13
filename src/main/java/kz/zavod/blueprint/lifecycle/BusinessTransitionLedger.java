@@ -70,6 +70,16 @@ public class BusinessTransitionLedger {
                     event.previousEventHash(),event.createdAt().toString());
             if(!event.siteId().equals(siteId)||!calculated.equals(event.eventHash()))
                 throw new IllegalStateException("BUSINESS_LEDGER_HASH_MISMATCH");
+            // Chain hashes alone are insufficient: compare anchored revision hash
+            // against verified, persisted immutable Blueprint bytes.
+            UUID revisionId=UUID.fromString(event.blueprintId());
+            drafts.loadRevision(revisionId,event.revisionNo());
+            String authoritative=revisions.findByBlueprintIdAndRevisionNo(
+                    event.blueprintId(),event.revisionNo())
+                    .orElseThrow(()->new IllegalStateException("MISSING_BLUEPRINT_REVISION"))
+                    .contentHash();
+            if(!authoritative.equals(event.contentHash()))
+                throw new IllegalStateException("BUSINESS_LEDGER_REVISION_HASH_MISMATCH");
             previousHash=event.eventHash();
             expected++;
         }
