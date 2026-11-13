@@ -162,6 +162,23 @@ class BusinessTransitionLedgerPostgresTest {
         assertThrows(IllegalStateException.class,()->ledgerVerifier.verifySite(second.site()));
     }
 
+    @Test void boundedReceiptValidationRejectsTamperedDirectPredecessor() {
+        var f=setup();
+        actor("reviewer");
+        lifecycle.approve(f.site(),f.blueprint(),1,Set.of("L1"));
+        actor("publisher");
+        lifecycle.publish(f.site(),f.blueprint(),1);
+        actor("activator");
+        commands.activate(f.site(),"bounded-check",f.blueprint(),1,null);
+        ledgerVerifier.verifyReceiptEvent(f.site(),"bounded-check");
+        jdbc.update("update business_transition set actor_id=? where site_id=? and sequence_no=2",
+                "forged-publisher",f.site());
+        assertThrows(IllegalStateException.class,
+                ()->ledgerVerifier.verifyReceiptEvent(f.site(),"bounded-check"));
+        assertThrows(IllegalStateException.class,
+                ()->commands.observe(f.site(),"bounded-check"));
+    }
+
     @Test void journalInsertFailureRollsBackApprovalAtomically() {
         var f=setup();
         actor("reviewer");
