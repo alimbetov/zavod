@@ -19,6 +19,10 @@ public final class EngineeringGoldenModel {
         List<Finding> failures=new ArrayList<>();
         for(BlueprintReadiness.Finding f:BlueprintReadiness.blockers(blueprint,catalog))
             failures.add(new Finding(f.code(),f.ref(),"Fix publication readiness"));
+        boolean applicable=blueprint.units().stream()
+                .anyMatch(unit->unit.profileKey().equals("continuous.pump.v1"));
+        if(!applicable)failures.add(new Finding("GOLDEN_PROFILE_NOT_APPLICABLE",
+                blueprint.id().toString(),"continuous.pump.v1"));
         for(ProcessUnit unit:blueprint.units()) {
             if(!unit.profileKey().equals("continuous.pump.v1"))continue;
             boolean tank=unit.equipment().stream().anyMatch(e->e.typeKey().equals("water-tank")
