@@ -20,7 +20,14 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Service
 public class BusinessLedgerAuditService {
-    public record Anchor(long sequenceNo,String eventHash) {}
+    public record Anchor(long sequenceNo,String eventHash) {
+        public Anchor {
+            if(sequenceNo<0 || eventHash==null
+                    ||(sequenceNo==0 && !eventHash.isEmpty())
+                    ||(sequenceNo>0 && !eventHash.matches("[0-9a-f]{64}")))
+                throw new IllegalArgumentException("INVALID_TRUSTED_ANCHOR");
+        }
+    }
     public record SiteResult(String siteId,String status,long sequenceNo,
                              String eventHash,String errorCode) {}
     public record AuditReport(Instant checkedAt,List<SiteResult> sites,boolean passed) {}
@@ -63,6 +70,7 @@ public class BusinessLedgerAuditService {
     // not doom all other results or turn a controlled FAIL into UnexpectedRollback.
     @Transactional(propagation=Propagation.NOT_SUPPORTED)
     public AuditReport auditAll(Map<String,Anchor> trustedAnchors) {
+        java.util.Objects.requireNonNull(trustedAnchors,"trustedAnchors");
         var results=new ArrayList<SiteResult>();
         var allSites=sites.findAll().stream().map(SiteEntity::siteId).sorted().toList();
         var known=Set.copyOf(allSites);
