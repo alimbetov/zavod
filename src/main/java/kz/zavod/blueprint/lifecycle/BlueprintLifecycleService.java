@@ -108,6 +108,81 @@ public class BlueprintLifecycleService {
         return activationId;
     }
 
+    /**
+     * A revoked publication cannot be activated or restored. An already active
+     * publication cannot be revoked until a replacement is selected.
+     * Site lock serializes this check against concurrent activation/restore.
+     */
+    @Transactional
+    public void revoke(String siteId,UUID blueprintId,long revision,String reason) {
+        String actor=authorize(siteId,SiteMemberEntity.Role.PUBLISHER);
+        verifyOwned(siteId,blueprintId);
+        requireReason(reason);
+        SiteEntity site=sites.lockSite(siteId)
+                .orElseThrow(()->new BlueprintLifecycleException("UNKNOWN_SITE"));
+        var approval=approvals.lockApproval(key(blueprintId,revision))
+                .orElseThrow(()->new BlueprintLifecycleException("NOT_PUBLISHED"));
+        if(!siteId.equals(approval.siteId()))throw new SecurityException("SITE_ACCESS_DENIED");
+        if(site.activeSetId()!=null) {
+            var current=sets.findById(site.activeSetId())
+                    .orElseThrow(()->new BlueprintLifecycleException("INVALID_ACTIVATION_POINTER"));
+            if(current.blueprintId().equals(blueprintId.toString())&&current.revisionNo()==revision)
+                throw new BlueprintLifecycleException("ACTIVE_PUBLICATION_CANNOT_REVOKE");
+        }
+        approval.revoke(actor,reason.strip());
+        approvals.saveAndFlush(approval);
+    }
+
+    /**
+     * Restore means a new immutable engineering selection pointing at a
+     * previously activated set, never a rewind/mutation of history or a PLC action.
+     * The target must remain published and must pass today's site policy.
+     */
+    @Transactional
+    public String restore(String siteId,String historicalSetId,String expectedPreviousSetId,String reason) {
+        String actor=authorize(siteId,SiteMemberEntity.Role.ACTIVATOR);
+        requireReason(reason);
+        SiteEntity site=sites.lockSite(siteId)
+                .orElseThrow(()->new BlueprintLifecycleException("UNKNOWN_SITE"));
+        if(!Objects.equals(expectedPreviousSetId,site.activeSetId()))
+            throw new BlueprintLifecycleException("STALE_ACTIVATION_SET");
+        if(site.activeSetId()==null)throw new BlueprintLifecycleException("NO_ACTIVE_CONFIGURATION");
+        var historical=sets.findById(historicalSetId)
+                .orElseThrow(()->new BlueprintLifecycleException("UNKNOWN_RESTORE_TARGET"));
+        if(!siteId.equals(historical.siteId()))throw new SecurityException("SITE_ACCESS_DENIED");
+        var current=sets.findById(site.activeSetId())
+                .orElseThrow(()->new BlueprintLifecycleException("INVALID_ACTIVATION_POINTER"));
+        if(current.blueprintId().equals(historical.blueprintId())
+                &&current.revisionNo()==historical.revisionNo()
+                &&current.selectedUnitsJson().equals(historical.selectedUnitsJson()))
+            throw new BlueprintLifecycleException("ALREADY_ACTIVE");
+        UUID blueprintId=UUID.fromString(historical.blueprintId());
+        verifyOwned(siteId,blueprintId);
+        var approval=approvals.findById(key(blueprintId,historical.revisionNo()))
+                .orElseThrow(()->new BlueprintLifecycleException("NOT_PUBLISHED"));
+        if(!siteId.equals(approval.siteId())||approval.state()!=BlueprintApprovalEntity.State.PUBLISHED)
+            throw new BlueprintLifecycleException("NOT_PUBLISHED");
+        if(!approval.selectedUnitsJson().equals(historical.selectedUnitsJson()))
+            throw new BlueprintLifecycleException("HISTORICAL_SELECTION_MISMATCH");
+        var blueprint=drafts.loadRevision(blueprintId,historical.revisionNo());
+        var findings=BlueprintPublicationGate.preflight(blueprint,
+                decode(historical.selectedUnitsJson()),site.maxActiveLines(),catalog);
+        if(!findings.isEmpty())
+            throw new BlueprintLifecycleException("RESTORE_BLOCKED:"+findings.get(0).code()+":"+findings.get(0).entity());
+        String restoredId=UUID.randomUUID().toString();
+        sets.saveAndFlush(new PlantActivationSetEntity(restoredId,siteId,historical.blueprintId(),
+                historical.revisionNo(),historical.selectedUnitsJson(),site.activeSetId(),
+                actor,historicalSetId,reason.strip()));
+        site.activate(restoredId);
+        sites.saveAndFlush(site);
+        return restoredId;
+    }
+
+    private static void requireReason(String reason) {
+        if(reason==null||reason.isBlank()||reason.length()>1024)
+            throw new BlueprintLifecycleException("REASON_REQUIRED");
+    }
+
     @Transactional(readOnly=true)
     public PlantActivationSetEntity active(String siteId){
         authorize(siteId,SiteMemberEntity.Role.VIEWER);
