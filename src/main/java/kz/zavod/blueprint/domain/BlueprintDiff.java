@@ -56,8 +56,14 @@ public final class BlueprintDiff {
     }
     private static Map<String,Equipment> equipmentMap(List<Equipment> list) {
         Map<String,Equipment> m=new HashMap<>();
-        for(Equipment e:list)if(m.putIfAbsent(e.id(),e)!=null)
-            throw new IllegalArgumentException("Duplicate equipment in diff: "+e.id());
+        for(Equipment e:list) {
+            // Physical ports are addressed by stable keys. Presentation order is not topology.
+            List<Port> ports=new ArrayList<>(e.ports());
+            ports.sort(Comparator.comparing(Port::key));
+            Equipment canonical=new Equipment(e.id(),e.typeKey(),e.templateVersion(),ports);
+            if(m.putIfAbsent(e.id(),canonical)!=null)
+                throw new IllegalArgumentException("Duplicate equipment in diff: "+e.id());
+        }
         return m;
     }
     private static Map<String,Boundary> boundaryMap(List<Boundary> list) {
