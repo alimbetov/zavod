@@ -25,6 +25,7 @@ public class BlueprintApprovalEntity {
         this.siteId=site;this.blueprintId=blueprint;this.revisionNo=revision;
         this.selectedUnitsJson=json;this.state=State.APPROVED;this.approvedBy=actor;this.approvedAt=Instant.now();
     }
+    public String approvedBy(){return approvedBy;}
     public String siteId(){return siteId;}
     public long revisionNo(){return revisionNo;}
     public String selectedUnitsJson(){return selectedUnitsJson;}
