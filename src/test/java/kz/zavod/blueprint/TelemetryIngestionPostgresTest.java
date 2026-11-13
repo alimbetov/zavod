@@ -104,6 +104,22 @@ class TelemetryIngestionPostgresTest {
                 .map(TelemetrySample::sourceEventId).toList());
     }
 
+    @Test void acceptedFutureTimestampCannotBeHiddenByPreviousGoodReading() {
+        var def=createSignal();
+        Instant instant=Instant.now();
+        ingestion.ingestSimulated(def.siteId(),def.blueprintId(),2,def.id(),
+                sample("previous-good",instant.minusSeconds(4),"2.5"));
+        // This is ALLOWED by the ingestion clock-skew budget (<= 30 seconds).
+        // It must remain visible to the quality evaluator rather than being
+        // silently excluded by the SQL latest() WHERE clause.
+        ingestion.ingestSimulated(def.siteId(),def.blueprintId(),2,def.id(),
+                sample("clock-ahead",instant.plusSeconds(10),"6.2"));
+        var reading=ingestion.latest(def.siteId(),def.blueprintId(),2,
+                def.id(),Instant.now());
+        assertEquals(Status.UNTRUSTED,reading.status());
+        assertNull(reading.value(),"a future timestamp cannot expose stale GOOD as CURRENT");
+    }
+
     @Test void crossSiteFutureTimestampAndInvalidQueriesAreDenied(){
         var def=createSignal();
         String other="other-"+UUID.randomUUID();
@@ -120,6 +136,21 @@ class TelemetryIngestionPostgresTest {
                 def.siteId(),def.blueprintId(),2,def.id(),
                 now.minusSeconds(30),now,501));
         assertEquals(0,count(def.id()));
+    }
+
+    @Test void boundedHistoryReturnsMostRecentSamplesInAscendingTimeline() {
+        var def=createSignal();
+        Instant base=Instant.now().minusSeconds(150);
+        for(int i=0;i<115;i++) {
+            ingestion.ingestSimulated(def.siteId(),def.blueprintId(),2,def.id(),
+                    sample(String.format("event-%03d",i),base.plusSeconds(i),Integer.toString(i)));
+        }
+        var history=ingestion.history(def.siteId(),def.blueprintId(),2,def.id(),
+                base.minusSeconds(1),base.plusSeconds(120),5);
+        assertEquals(List.of("event-110","event-111","event-112","event-113","event-114"),
+                history.stream().map(TelemetrySample::sourceEventId).toList(),
+                "limit must retain newest samples while presenting time ascending");
+        assertEquals(115,count(def.id()));
     }
 
     @Test void concurrentSameEventCommitsExactlyOneRow() throws Exception {

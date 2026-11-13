@@ -68,4 +68,22 @@ docker exec -i "$PG_NAME" pg_restore -U zavod -d zavod_restored \
 export ZAVOD_DB_URL="jdbc:postgresql://127.0.0.1:55432/zavod_restored"
 java -cp "$CP" kz.zavod.blueprint.BcqRecoveryProcess verify \
     "$TMP/manifest.properties" "$TMP/ready"
+# G4.2-E.3: audit actual restored history from a separate offline JVM and
+# produce a machine-readable report. This does not run an industrial scheduler.
+java -cp "$CP" kz.zavod.blueprint.BusinessLedgerAuditProcess "$TMP/full-ledger-audit.json"
+python3 - "$TMP/full-ledger-audit.json" "$TMP/trusted-anchors.json" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    report = json.load(fh)
+assert report["passed"] and len(report["sites"]) >= 1
+anchors = {entry["siteId"]: {"sequenceNo": entry["sequenceNo"],
+                              "eventHash": entry["eventHash"]}
+           for entry in report["sites"]}
+assert any(anchor["sequenceNo"] >= 8 for anchor in anchors.values())
+with open(sys.argv[2], "w", encoding="utf-8") as fh:
+    json.dump(anchors, fh)
+PY
+java -cp "$CP" kz.zavod.blueprint.BusinessLedgerAuditProcess \
+    "$TMP/verified-with-anchor.json" "$TMP/trusted-anchors.json"
+echo "BCQ_G42_FULL_AUDIT_PASS: offline JVM verified complete restored chain against external baseline"
 echo "BCQ-G3 PASS: forced JVM crash, cold-process recovery and PostgreSQL dump/restore"

@@ -1,4 +1,4 @@
-import type {Blueprint,CatalogEntry,Diagnostic,XRayView} from './model';
+import type {Blueprint,CatalogEntry,Diagnostic,XRayView,TelemetrySignalView,DemoStatus,DemoSimulation} from './model';
 const ROOT='/api/v1';
 export class ApiFailure extends Error {
   constructor(public status:number, message:string) { super(message); }
@@ -39,6 +39,18 @@ export const studioApi={
   }):Promise<{viewId:string;layoutVersion:number;blueprintRevision:number}> =>
     request(scope(site,id)+'/layouts/'+encodeURIComponent(viewId),{
       method:'PUT',headers:{'X-Zavod-Dev-Write':'true'},body:JSON.stringify(body)}),
+  telemetry:(site:string,id:string,revision:number,unitId:string,minutes=60):Promise<TelemetrySignalView[]> =>
+    request(scope(site,id)+'/revisions/'+revision+'/telemetry?unitId='+
+      encodeURIComponent(unitId)+'&minutes='+minutes+'&limit=100'),
+  demoStatus:(site:string,id:string,revision:number):Promise<DemoStatus> =>
+    request(scope(site,id)+'/revisions/'+revision+'/demo'),
+  demoStep:(site:string,id:string,revision:number,step:'approve'|'publish'|'activate'):Promise<DemoStatus> =>
+    request(scope(site,id)+'/revisions/'+revision+'/demo/'+step,{
+      method:'POST',headers:{'X-Zavod-Dev-Write':'true'}}),
+  demoSimulation:(site:string,id:string,revision:number,scenario:'NORMAL'|'ALARM'):Promise<DemoSimulation> =>
+    request(scope(site,id)+'/revisions/'+revision+'/demo/simulate',{
+      method:'POST',headers:{'X-Zavod-Dev-Write':'true'},
+      body:JSON.stringify({scenario})}),
   xray:(site:string,id:string,unitId:string):Promise<XRayView> =>
     request(scope(site,id)+'/x-ray?unitId='+encodeURIComponent(unitId)),
 };

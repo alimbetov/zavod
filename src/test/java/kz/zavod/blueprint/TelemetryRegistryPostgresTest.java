@@ -44,6 +44,30 @@ class TelemetryRegistryPostgresTest {
         return blueprints.saveDraft(site,first.id(),1,
                 new ProcessBlueprint(first.id(),2,10,List.of(unit),List.of(),List.of(),List.of()));
     }
+    @Test void registeredSignalIdentityMustNeverBeRetargetedWithSameUuid() {
+        String site="binding-immutable-"+UUID.randomUUID();
+        var blueprint=createWithPump(site);
+        UUID signalId=UUID.randomUUID();
+        var original=new SignalDefinition(signalId,site,blueprint.id(),2,
+                "L1","pump","pressure","bar",SourceKind.SIMULATED,Duration.ofSeconds(30));
+        assertEquals(original,registry.registerSimulated(original));
+        assertEquals(original,registry.registerSimulated(original),
+                "exact identical registration is a harmless idempotent retry");
+        assertThrows(TelemetryIngestionConflict.class,
+                ()->registry.registerSimulated(new SignalDefinition(UUID.randomUUID(),
+                        site,blueprint.id(),2,"L1","pump","pressure","bar",
+                        SourceKind.SIMULATED,Duration.ofSeconds(30))),
+                "same logical key with different ID cannot create a second mapping");
+        // Reusing the same client-supplied ID must not mutate an immutable
+        // signal binding. Otherwise historical samples would be reattributed.
+        var forged=new SignalDefinition(signalId,site,blueprint.id(),2,
+                "L1","pump","forged-pressure","Pa",SourceKind.SIMULATED,Duration.ofSeconds(5));
+        assertThrows(TelemetryIngestionConflict.class,()->registry.registerSimulated(forged));
+        assertEquals(original,mappings.findById(signalId.toString()).orElseThrow().definition());
+        assertEquals(List.of(original),registry.list(site,blueprint.id(),2));
+        assertEquals(1,registry.list(site,blueprint.id(),2).size());
+    }
+
     @Test void versionPinnedBindingRoundTripsAndRejectsCrossSiteAndUnknownEquipment() {
         String site="telemetry-"+UUID.randomUUID(),other="other-"+UUID.randomUUID();
         var blueprint=createWithPump(site);
@@ -52,7 +76,7 @@ class TelemetryRegistryPostgresTest {
                 "L1","pump","pressure","bar",SourceKind.SIMULATED,Duration.ofSeconds(30));
         assertEquals(def,registry.registerSimulated(def));
         assertEquals(List.of(def),registry.list(site,blueprint.id(),2));
-        assertEquals(1,mappings.count());
+        assertEquals(1,registry.list(site,blueprint.id(),2).size());
         assertThrows(RuntimeException.class,()->registry.list(other,blueprint.id(),2));
         assertThrows(IllegalArgumentException.class,()->registry.registerSimulated(
                 new SignalDefinition(UUID.randomUUID(),site,blueprint.id(),2,

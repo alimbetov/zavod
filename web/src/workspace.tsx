@@ -4,6 +4,8 @@ import {ReactFlow,Background,Controls,Handle,MiniMap,Position,ReactFlowProvider,
 import {studioApi,ApiFailure} from './api';
 import {EquipmentSymbol} from './Symbols';
 import {EquipmentEditor} from './EquipmentEditor';
+import {TelemetryMonitor} from './TelemetryMonitor';
+import {DemoJourney} from './DemoJourney';
 import {createGraph,CURRENT_TELEMETRY,LENSES,LENS_LABELS,LAYOUT_LABELS,ROLE_LABELS,
   variantId,type Blueprint,type CatalogEntry,type Diagnostic,type LayoutMode,type Lens,
   type Role,type ProcessUnit,type Equipment,type XRayView} from './model';
@@ -57,6 +59,7 @@ function WorkspaceInner(){
   const [pending,setPending]=useState(false);
   const [notice,setNotice]=useState<Notice|null>(null);
   const [dirty,setDirty]=useState(false);
+  const [telemetryRefresh,setTelemetryRefresh]=useState(0);
   const [theme,setTheme]=useState<'dark'|'light'>('dark');
   const [nodes,setNodes]=useState<Node<UnitData>[]>([]);
   const [edges,setEdges]=useState<Edge[]>([]);
@@ -186,6 +189,11 @@ function WorkspaceInner(){
     </div>
     {notice&&<div className={'notice '+notice.type} role={notice.type==='error'?'alert':'status'}>{notice.message}
       <button onClick={()=>setNotice(null)} aria-label="Закрыть сообщение">×</button></div>}
+    {site&&blueprint&&!dirty&&blueprint.units.length===3
+      &&blueprint.units.some(u=>u.id.endsWith('-MIX'))&&
+      <DemoJourney site={site} blueprintId={blueprint.id} revision={savedRevision}
+        onSample={unitId=>{setSelectedUnit(unitId);setSelectedEquipment('');
+          setTelemetryRefresh(n=>n+1);if(layout==='FOCUS')setLayout('SPLIT');}}/>}
     {editingUnit&&blueprint&&site?<EquipmentEditor site={site} blueprint={blueprint}
       unitId={editingUnit} catalog={catalog}
       onCommitted={saved=>{applySnapshot(saved,true);}}
@@ -253,8 +261,13 @@ function WorkspaceInner(){
           <div className="xr-item"><span>Общие ресурсы</span><strong>{xray.sharedAssets.join(', ')||'—'}</strong></div>
           <div className="xr-item"><span>Совместное использование</span><strong>{xray.sharedResourcePeers.join(', ')||'—'}</strong></div></>}
         <div className="section-title">Монитор параметров</div>
-        <div className="empty-trend"><div className="trend-grid"/><strong>Нет подтверждённых измерений</strong>
-          <small>Температура, давление и тренды появятся только после квалифицированной привязки источника. Данные не симулируются молча.</small></div>
+        {site&&blueprint&&selectedUnit&&!dirty?
+          <TelemetryMonitor site={site} blueprintId={blueprint.id}
+            revision={savedRevision} unitId={selectedUnit} reloadToken={telemetryRefresh}/>:
+          <div className="empty-trend"><div className="trend-grid"/>
+            <strong>Нет подтверждённых измерений</strong>
+            <small>Монитор доступен для сохранённой версии Blueprint.
+              LIVE PLC-сигналы не подключены.</small></div>}
       </aside>}
     </main>}
     <footer className="bottom-dock">

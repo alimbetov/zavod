@@ -15,6 +15,15 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 docker exec "$name" pg_isready -U zavod -d zavod >/dev/null
+# pg_isready can succeed during the Docker image's temporary init postmaster.
+# Require successful SQL on the intended database after bootstrap settles.
+ready_sql=false
+for _ in $(seq 1 80); do
+  if docker exec "$name" psql -v ON_ERROR_STOP=1 -U zavod -d zavod \
+      -c 'SELECT 1' >/dev/null 2>&1; then ready_sql=true; break; fi
+  sleep 0.5
+done
+[[ "$ready_sql" == true ]] || { docker logs "$name" >&2; exit 1; }
 # Minimal pre-upgrade schema for the exact ALTER TABLE contract. This is NOT
 # a substitute for a rehearsal against the actual production schema.
 docker exec -i "$name" psql -v ON_ERROR_STOP=1 -U zavod -d zavod <<'SQL'

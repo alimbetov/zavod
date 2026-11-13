@@ -1,0 +1,100 @@
+package kz.zavod.blueprint.lifecycle;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
+
+/**
+ * Explicit offline full-ledger audit. Never invoked on command-replay hot paths.
+ * Reports the chain tip for independent storage/retention by the operator.
+ * Not a cryptographic signature: a trusted external checkpoint store is required
+ * to detect deletion or rewriting of the entire database history.
+ */
+@Service
+public class BusinessLedgerAuditService {
+    public record Anchor(long sequenceNo,String eventHash) {
+        public Anchor {
+            if(sequenceNo<0 || eventHash==null
+                    ||(sequenceNo==0 && !eventHash.isEmpty())
+                    ||(sequenceNo>0 && !eventHash.matches("[0-9a-f]{64}")))
+                throw new IllegalArgumentException("INVALID_TRUSTED_ANCHOR");
+        }
+    }
+    public record SiteResult(String siteId,String status,long sequenceNo,
+                             String eventHash,String errorCode) {}
+    public record AuditReport(Instant checkedAt,List<SiteResult> sites,boolean passed) {}
+
+    private final BusinessTransitionLedger ledger;
+    private final BusinessTransitionRepository events;
+    private final SiteRepository sites;
+    private final TransactionTemplate consistentSnapshot;
+    public BusinessLedgerAuditService(BusinessTransitionLedger ledger,
+                                      BusinessTransitionRepository events,
+                                      SiteRepository sites,
+                                      PlatformTransactionManager txManager) {
+        this.ledger=ledger;this.events=events;this.sites=sites;
+        this.consistentSnapshot=new TransactionTemplate(txManager);
+        this.consistentSnapshot.setReadOnly(true);
+        this.consistentSnapshot.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.consistentSnapshot.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+    }
+
+    private SiteResult inspectSite(String site,Anchor anchor) {
+        ledger.verifySite(site);
+        var tip=events.findTopBySiteIdOrderBySequenceNoDesc(site);
+        long seq=tip.map(BusinessTransitionEntity::sequenceNo).orElse(0L);
+        String hash=tip.map(BusinessTransitionEntity::eventHash).orElse("");
+        if(anchor!=null) {
+            if(seq<anchor.sequenceNo())throw new IllegalStateException("ANCHOR_HISTORY_TRUNCATED");
+            if(anchor.sequenceNo()>0) {
+                var pinned=events.findBySiteIdAndSequenceNo(site,anchor.sequenceNo())
+                        .orElseThrow(()->new IllegalStateException("ANCHOR_EVENT_MISSING"));
+                if(!pinned.eventHash().equals(anchor.eventHash()))
+                    throw new IllegalStateException("ANCHOR_HASH_MISMATCH");
+            } else if(!anchor.eventHash().isEmpty()) {
+                throw new IllegalStateException("ANCHOR_INVALID");
+            }
+        }
+        return new SiteResult(site,"PASS",seq,hash,null);
+    }
+
+    // Deliberately no encompassing transaction: a failed site verification must
+    // not doom all other results or turn a controlled FAIL into UnexpectedRollback.
+    @Transactional(propagation=Propagation.NOT_SUPPORTED)
+    public AuditReport auditAll(Map<String,Anchor> trustedAnchors) {
+        java.util.Objects.requireNonNull(trustedAnchors,"trustedAnchors");
+        var results=new ArrayList<SiteResult>();
+        var allSites=sites.findAll().stream().map(SiteEntity::siteId).sorted().toList();
+        var known=Set.copyOf(allSites);
+        // A missing previously anchored site must never disappear silently.
+        for(String id:trustedAnchors.keySet()) {
+            if(!known.contains(id))
+                results.add(new SiteResult(id,"FAIL",0,"","ANCHOR_SITE_MISSING"));
+        }
+        for(String site:allSites) {
+            try {
+                // Verify all rows and select their chain tip from the SAME MVCC
+                // snapshot. A concurrent writer must not be able to replace the
+                // verified tip with an unchecked, newly appended event.
+                results.add(consistentSnapshot.execute(tx->
+                        inspectSite(site,trustedAnchors.get(site))));
+            } catch(RuntimeException error) {
+                // Do not leak SQL, credentials, or unbounded exception text to audit reports.
+                String code=error.getMessage();
+                if(code==null||!code.matches("[A-Z][A-Z0-9_]{2,80}"))
+                    code="LEDGER_AUDIT_FAILED";
+                results.add(new SiteResult(site,"FAIL",0,"",code));
+            }
+        }
+        return new AuditReport(Instant.now(),List.copyOf(results),
+                results.stream().allMatch(x->"PASS".equals(x.status())));
+    }
+}

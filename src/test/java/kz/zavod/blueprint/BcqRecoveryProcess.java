@@ -67,6 +67,7 @@ public final class BcqRecoveryProcess {
         var drafts=app.getBean(BlueprintDraftService.class);
         var studio=app.getBean(StudioBlueprintService.class);
         var lifecycle=app.getBean(BlueprintLifecycleService.class);
+        var commands=app.getBean(ActivationCommandService.class);
         var jdbc=app.getBean(JdbcTemplate.class);
         String siteId="bcq-recovery-"+UUID.randomUUID();
         sites.saveAndFlush(new SiteEntity(siteId,10));
@@ -91,7 +92,7 @@ public final class BcqRecoveryProcess {
         actor("publisher");
         lifecycle.publish(siteId,base.id(),2);
         actor("activator");
-        String activationId=lifecycle.activate(siteId,base.id(),2,null);
+        String activationId=commands.activate(siteId,"g42-recovery-original",base.id(),2,null).activationSetId();
         check(lifecycle.active(siteId).id().equals(activationId),"activation pointer before JVM crash");
         // Exercise the full published -> upgraded -> restored -> revoked historical chain
         // before SIGKILL. The separate verifier must recover this precise chain.
@@ -101,7 +102,7 @@ public final class BcqRecoveryProcess {
         actor("reviewer");lifecycle.approve(siteId,base.id(),3,Set.of("L001"));
         actor("publisher");lifecycle.publish(siteId,base.id(),3);
         actor("activator");
-        String upgradedId=lifecycle.activate(siteId,base.id(),3,activationId);
+        String upgradedId=commands.activate(siteId,"g42-recovery-upgraded",base.id(),3,activationId).activationSetId();
         String restoredId=lifecycle.restore(siteId,activationId,upgradedId,"BCQ-G3 rollback after regression");
         actor("publisher");lifecycle.revoke(siteId,base.id(),3,"BCQ-G3 blocked revision");
         check(lifecycle.active(siteId).id().equals(restoredId),"restored pointer before JVM crash");
@@ -121,6 +122,8 @@ public final class BcqRecoveryProcess {
         p.setProperty("activationId",restoredId);
         p.setProperty("originalActivationId",activationId);
         p.setProperty("upgradedActivationId",upgradedId);
+        p.setProperty("originalCommandKey","g42-recovery-original");
+        p.setProperty("upgradedCommandKey","g42-recovery-upgraded");
         p.setProperty("activeHash",hash(jdbc,base.id(),2));
         p.setProperty("labHash",hash(jdbc,labId,2));
         try(var writer=Files.newBufferedWriter(manifest)) {p.store(writer,"BCQ-G3 crash-and-recover qualification");}
@@ -140,6 +143,9 @@ public final class BcqRecoveryProcess {
         var lifecycle=app.getBean(BlueprintLifecycleService.class);
         var approvals=app.getBean(BlueprintApprovalRepository.class);
         var sets=app.getBean(PlantActivationSetRepository.class);
+        var commands=app.getBean(ActivationCommandService.class);
+        var ledger=app.getBean(BusinessTransitionLedger.class);
+        var transitions=app.getBean(BusinessTransitionRepository.class);
         var jdbc=app.getBean(JdbcTemplate.class);
         check(sites.findById(siteId).orElseThrow().activeSetId().equals(activationId),"site pointer");
         check(sites.findById(siteId).orElseThrow().maxActiveLines()==10,"server quota");
@@ -160,6 +166,21 @@ public final class BcqRecoveryProcess {
         check(sets.findById(originalId).orElseThrow().revisionNo()==2,"original revision remains immutable");
         check(sets.findById(upgradedId).orElseThrow().revisionNo()==3,"upgraded revision retained");
         check(drafts.loadRevision(activeBlueprintId,3).revision()==3,"revoked revision snapshot preserved");
+        actor("activator");
+        var first=commands.observe(siteId,str(p,"originalCommandKey"));
+        var upgrade=commands.observe(siteId,str(p,"upgradedCommandKey"));
+        check(first.state()==ActivationCommandService.OutcomeState.COMMITTED,"original command outcome");
+        check(upgrade.state()==ActivationCommandService.OutcomeState.COMMITTED,"upgrade command outcome");
+        check(first.activationSetId().equals(str(p,"originalActivationId")),"original receipt after process restart");
+        check(upgrade.activationSetId().equals(str(p,"upgradedActivationId")),"upgrade receipt after process restart");
+        check(commands.activate(siteId,str(p,"originalCommandKey"),activeBlueprintId,2,null).replayed(),
+                "replay original activation after restart");
+        check(commands.activate(siteId,str(p,"upgradedCommandKey"),activeBlueprintId,3,
+                str(p,"originalActivationId")).replayed(),"replay upgraded activation after restart");
+        check(sets.countBySiteId(siteId)==3,"replayed historical commands created no new sets");
+        ledger.verifySite(siteId);
+        check(transitions.findBySiteIdOrderBySequenceNoAsc(siteId).size()==8,
+                "complete 8-event approve/publish/activate/restore/revoke ledger persisted");
         actor("viewer");
         var active=lifecycle.active(siteId);
         check(active.id().equals(activationId),"active set id");

@@ -84,3 +84,39 @@ export function createGraph(bp:Blueprint) {
   })));
   return {lines,edges};
 }
+
+export type SignalStatus = 'CURRENT'|'UNTRUSTED'|'STALE'|'DISCONNECTED'|'NO_DATA';
+export type SampleQuality = 'GOOD'|'UNCERTAIN'|'BAD'|'STALE'|'DISCONNECTED';
+export interface TelemetrySignalDefinition {
+  id:string;siteId:string;blueprintId:string;blueprintRevision:number;
+  unitId:string;equipmentId:string;signalKey:string;unitCode:string;
+  sourceKind:'SIMULATED'|'EDGE_READ_ONLY';staleAfter:string;
+}
+export interface TelemetrySample {
+  signalId:string;sourceKind:'SIMULATED'|'EDGE_READ_ONLY';sourceEventId:string;
+  value:number;unitCode:string;sourceTime:string;receivedAt:string;quality:SampleQuality;
+}
+export interface TelemetryReading {
+  status:SignalStatus;value:number|null;unitCode:string;
+  observedAt:string|null;evaluatedAt:string;sourceKind:'SIMULATED'|'EDGE_READ_ONLY';
+}
+export interface TelemetrySignalView {
+  definition:TelemetrySignalDefinition;latest:TelemetryReading;history:TelemetrySample[];
+}
+
+/** Dev-local synthetic demonstration. Never an industrial operating permit. */
+export interface DemoStatus {
+  approvalState:'DRAFT'|'APPROVED'|'PUBLISHED'|'REVOKED';
+  active:boolean;
+  activationSetId:string|null;
+  signalCount:number;
+  transitionCount:number;
+}
+export interface DemoSimulation {
+  scenario:'NORMAL'|'ALARM';
+  unitId:string;
+  signalId:string;
+  eventId:string;
+  value:number;
+  unitCode:string;
+}

@@ -28,13 +28,15 @@ public class BlueprintLifecycleService {
     private final PlantActivationSetRepository sets;
     private final BlueprintDraftService drafts;
     private final ObjectMapper mapper;
+    private final BusinessTransitionLedger ledger;
     private final EquipmentCatalog catalog=EquipmentCatalog.standard();
 
     public BlueprintLifecycleService(SiteRepository sites,SiteMemberRepository members,
             BlueprintSiteRepository assignments,BlueprintApprovalRepository approvals,
-            PlantActivationSetRepository sets,BlueprintDraftService drafts,ObjectMapper mapper){
+            PlantActivationSetRepository sets,BlueprintDraftService drafts,ObjectMapper mapper,
+            BusinessTransitionLedger ledger){
         this.sites=sites;this.members=members;this.assignments=assignments;
-        this.approvals=approvals;this.sets=sets;this.drafts=drafts;this.mapper=mapper;
+        this.approvals=approvals;this.sets=sets;this.drafts=drafts;this.mapper=mapper;this.ledger=ledger;
     }
 
     @Transactional
@@ -54,6 +56,8 @@ public class BlueprintLifecycleService {
         try {
             approvals.saveAndFlush(new BlueprintApprovalEntity(siteId,blueprintId.toString(),revision,
                     encode(selectedUnitIds),actor));
+            ledger.append(siteId,BusinessTransitionEntity.EventType.APPROVE,actor,
+                    blueprintId.toString(),revision,null,null,null,null);
         } catch(DataIntegrityViolationException | OptimisticLockingFailureException ex) {
             // Two reviewers may pass the pre-check concurrently: the database owns
             // uniqueness, and callers receive a stable business conflict.
@@ -65,6 +69,8 @@ public class BlueprintLifecycleService {
     public void publish(String siteId,UUID blueprintId,long revision){
         String actor=authorize(siteId,SiteMemberEntity.Role.PUBLISHER);
         verifyOwned(siteId,blueprintId);
+        // Site lock orders the append-only audit chain across *all* lifecycle commands.
+        sites.lockSite(siteId).orElseThrow(()->new BlueprintLifecycleException("UNKNOWN_SITE"));
         var approval=approvals.lockApproval(key(blueprintId,revision))
                 .orElseThrow(()->new BlueprintLifecycleException("NOT_APPROVED"));
         if(!siteId.equals(approval.siteId()))throw new SecurityException("SITE_ACCESS_DENIED");
@@ -72,6 +78,8 @@ public class BlueprintLifecycleService {
         if(actor.equals(approval.approvedBy()))throw new BlueprintLifecycleException("FOUR_EYES_REQUIRED");
         approval.publish(actor);
         approvals.saveAndFlush(approval);
+        ledger.append(siteId,BusinessTransitionEntity.EventType.PUBLISH,actor,
+                blueprintId.toString(),revision,null,null,null,null);
     }
 
     /**
@@ -80,6 +88,13 @@ public class BlueprintLifecycleService {
      */
     @Transactional
     public String activate(String siteId,UUID blueprintId,long revision,String expectedPreviousSetId){
+        return activateWithCommand(siteId,blueprintId,revision,expectedPreviousSetId,null);
+    }
+
+    /** Called within an existing transactional idempotency wrapper, or directly for legacy activation. */
+    @Transactional
+    public String activateWithCommand(String siteId,UUID blueprintId,long revision,
+                                      String expectedPreviousSetId,String commandKey){
         String actor=authorize(siteId,SiteMemberEntity.Role.ACTIVATOR);
         verifyOwned(siteId,blueprintId);
         SiteEntity site=sites.lockSite(siteId)
@@ -109,6 +124,8 @@ public class BlueprintLifecycleService {
                 revision,approved.selectedUnitsJson(),site.activeSetId(),actor));
         site.activate(activationId);
         sites.saveAndFlush(site);
+        ledger.append(siteId,BusinessTransitionEntity.EventType.ACTIVATE,actor,
+                blueprintId.toString(),revision,expectedPreviousSetId,activationId,null,commandKey);
         return activationId;
     }
 
@@ -136,6 +153,8 @@ public class BlueprintLifecycleService {
         }
         approval.revoke(actor,reason.strip());
         approvals.saveAndFlush(approval);
+        ledger.append(siteId,BusinessTransitionEntity.EventType.REVOKE,actor,
+                blueprintId.toString(),revision,site.activeSetId(),null,reason.strip(),null);
     }
 
     /**
@@ -181,6 +200,9 @@ public class BlueprintLifecycleService {
                 actor,historicalSetId,reason.strip()));
         site.activate(restoredId);
         sites.saveAndFlush(site);
+        ledger.append(siteId,BusinessTransitionEntity.EventType.RESTORE,actor,
+                historical.blueprintId(),historical.revisionNo(),expectedPreviousSetId,restoredId,
+                reason.strip(),null);
         return restoredId;
     }
 
