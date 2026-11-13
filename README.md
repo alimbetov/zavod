@@ -1,7 +1,32 @@
 # Zavod / IndustrialOS
 
-IndustrialOS is a proposed, controller-independent industrial line designer and production operations platform. Initial vertical: concrete batching plants.
+**Состояние:** проектирование R0, мастер-ТЗ v0.1 (Draft, требует ревью).  
+**Репозиторий:** https://github.com/alimbetov/zavod  
+**Пилотная отрасль:** бетонные заводы (batching plants).  
+**Целевая модель:** универсальный конструктор технологических линий + промышленный edge-шлюз + операционный учёт.  
+**Дата baseline:** 2026-11-13.
 
-> Status: repository bootstrap only. Project requirements are prepared in a feature branch and reviewed via pull request. This README does **not** imply that any production or PLC functionality has been implemented in this repository.
+> ВАЖНО: этот репозиторий пока содержит документацию, а не работающее промышленное ПО. Прототип Line Designer R0.1, обсуждавшийся ранее, существует отдельно в архиве; его перенос, сборка и повторная квалификация в этом репозитории должны быть выполнены отдельным PR. Не выдавать требования за реализованные функции.
 
-Working principle: design → specification → RED tests → review → implementation → qualification. No direct PLC control is permitted until site-specific engineering and safety acceptance.
+## Документы — единый источник истины
+
+1. [Мастер-ТЗ R0](docs/requirements/R0-master-spec.md) — бизнес-цели, границы продукта, роли и FR/NFR.
+2. [Доменная модель](docs/architecture/domain-model.md) — оборудование, порты, потоки, графы, схемы и инварианты.
+3. [Системная архитектура](docs/architecture/system-architecture.md) — frontend, backend, edge, PLC, инфраструктура.
+4. [OT-безопасность](docs/security/ot-safety-and-cybersecurity.md) — границы доверия, требования к commissioning и отказам.
+5. [Приёмочные сценарии](docs/testing/acceptance-and-quality-gates.md) — RED-тесты, матрица сценариев и quality gates.
+6. [План реализации](docs/roadmap/implementation-plan.md) — R0.2 → R3 с критериями переходов.
+7. [ADR-0001](docs/decisions/ADR-0001-platform-strategy.md) — принятая стратегия универсальной платформы.
+8. [Открытые решения](docs/decisions/open-decisions.md) — решения, без которых нельзя начинать отдельные этапы.
+
+## Процесс разработки
+
+Scenario Design → Test-First (RED) → Test Review → Implementation (GREEN) → Regression → Independent Review → Merge.  
+Все изменения через рабочие ветки и PR; main — стабильная база после ревью.
+
+## Критически важные ограничения
+
+- Ни браузер, ни Spring Boot, ни облако не отвечают за циклическое, реального времени или safety-critical управление; это зона локального PLC и аттестованных защитных контуров.
+- По умолчанию доступ к контроллеру отключён. Первый этап реальной интеграции строго read-only.
+- В R0 симулятор не должен взаимодействовать с реальными исполнительными механизмами.
+- Выпуск команд на реальное оборудование — отдельный будущий проектный этап после оценки рисков, квалификации, FAT/SAT и разрешения ответственного инженера.
