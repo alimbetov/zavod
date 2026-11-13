@@ -9,6 +9,7 @@ on:
       - 'scripts/test-bcq-recovery.sh'
       - 'scripts/test-bcq-035-migration.sh'
       - 'scripts/test-bcq-g42-ledger-privileges.sh'
+      - 'scripts/test-bcq-g42-pitr.sh'
       - 'scripts/sql/**'
       - '.github/workflows/bcq-g3-process-recovery.yml'
   workflow_dispatch:
@@ -31,3 +32,5 @@ jobs:
         run: bash scripts/test-bcq-g42-ledger-privileges.sh
       - name: Force Java process crash, read same PostgreSQL, restore backup
         run: bash scripts/test-bcq-recovery.sh
+      - name: Qualify archived WAL PITR target and measure isolated recovery time
+        run: bash scripts/test-bcq-g42-pitr.sh
