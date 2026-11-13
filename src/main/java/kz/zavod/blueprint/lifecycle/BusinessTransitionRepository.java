@@ -8,4 +8,5 @@ public interface BusinessTransitionRepository extends JpaRepository<BusinessTran
     Optional<BusinessTransitionEntity> findTopBySiteIdOrderBySequenceNoDesc(String siteId);
     List<BusinessTransitionEntity> findBySiteIdOrderBySequenceNoAsc(String siteId);
     Optional<BusinessTransitionEntity> findBySiteIdAndCommandKey(String siteId,String commandKey);
+    Optional<BusinessTransitionEntity> findBySiteIdAndSequenceNo(String siteId,long sequenceNo);
 }
