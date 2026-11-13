@@ -87,10 +87,12 @@ class EngineeringProjectCrudPostgresTest {
                 .andExpect(status().isNotFound());
         assertEquals(EngineeringProjectEntity.Status.ARCHIVED,
                 repository.findById(id).orElseThrow().status());
+        var next=new ProcessBlueprint(UUID.fromString(id),2,10,
+                List.of(),List.of(),List.of(),List.of());
         mvc.perform(put("/api/v1/sites/{site}/blueprints/{id}/draft",site,id)
                 .header("X-Zavod-Dev-Write","true").contentType(MediaType.APPLICATION_JSON)
-                .content("{\\"expectedRevision\\":1,\\"snapshot\\":null}"))
-                .andExpect(status().isUnprocessableEntity());
+                .content(json.writeValueAsString(new StudioDevController.SaveDraftRequest(1,next))))
+                .andExpect(status().isConflict());
         // Soft delete must never remove append-only revision history.
         mvc.perform(get("/api/v1/sites/{site}/blueprints/{id}/revisions/1",site,id))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.revision").value(1));
