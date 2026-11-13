@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 /**
  * Explicit offline full-ledger audit. Never invoked on command-replay hot paths.
@@ -30,7 +31,9 @@ public class BusinessLedgerAuditService {
         this.ledger=ledger;this.events=events;this.sites=sites;
     }
 
-    @Transactional(readOnly=true)
+    // Deliberately no encompassing transaction: a failed site verification must
+    // not doom all other results or turn a controlled FAIL into UnexpectedRollback.
+    @Transactional(propagation=Propagation.NOT_SUPPORTED)
     public AuditReport auditAll(Map<String,Anchor> trustedAnchors) {
         var results=new ArrayList<SiteResult>();
         var allSites=sites.findAll().stream().map(SiteEntity::siteId).sorted().toList();
