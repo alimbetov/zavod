@@ -24,6 +24,14 @@ class TelemetryQualityEvaluatorTest {
         return sample(q,T,T,new BigDecimal("2.5"),"bar",ID,SourceKind.SIMULATED);
     }
 
+    @Test void signalExpiryMustBeRepresentableInPersistedMilliseconds() {
+        assertThrows(IllegalArgumentException.class,()->new SignalDefinition(ID,"local-unit-test",
+                definition.blueprintId(),1,"L1","pump","pressure","bar",
+                SourceKind.SIMULATED,Duration.ofNanos(1)));
+        assertDoesNotThrow(()->new SignalDefinition(ID,"local-unit-test",
+                definition.blueprintId(),1,"L1","pump","pressure","bar",
+                SourceKind.SIMULATED,Duration.ofMillis(1)));
+    }
     @Test void missingSampleCannotBeRepresentedAsCurrent() {
         var reading=TelemetryQualityEvaluator.evaluate(definition,null,T);
         assertEquals(Status.NO_DATA,reading.status());
