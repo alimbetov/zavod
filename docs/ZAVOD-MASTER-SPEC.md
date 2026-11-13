@@ -1669,3 +1669,86 @@ CI проверил также три предыдущих JPA/PostgreSQL тес
 **Definition of Done (first usable product):** engineer without editing JSON can create, connect, validate, save and reopen one hydroponic DRAFT and one small manufacturing LINE; after restart/reload physical graph and screen positions survive; wrong port never qualifies; 99-unit Overview remains usable; unauthorized API write denied; 409 handled with no lost edits; virtual state never represented as physical telemetry; `main` frontend/backend CI and browser E2E PASS on exact SHA.
 
 **Out of scope:** game-level Blueprint scripting, user code execution, 3D CAD, actual PLC write, AI/ML INT-001…008, MES scheduling, real-time certified control, collaborative CRDT editing and microservices. Keep separate Future Design topics; do not block R0.6 delivery.
+
+
+### 22.9 Заводской Smart Focus — автоматический фокус на подозрительном оборудовании
+
+**Решение:** развитие Zavod Blueprint Studio в направлении **Smart Assessment → Smart Focus**. Smart Assessment непрерывно анализирует параметры **всех** наблюдаемых узлов независимо от того, какой узел открыт на экране. Smart Focus управляет только **визуальным вниманием**: выбирает узел, подсвечивает его, показывает Inspector, тренд, основание подозрения и состояние источника. Он никогда не является исполнительным контроллером и не посылает команды PLC.
+
+**Статус на момент принятия:** DESIGN / PLANNED; в \`main\` нет реального historian, интегрированной SCADA/Telemetry, React Studio или Smart Focus runtime. Первый этап допускается **только с SIMULATED observations**, далее переход на квалифицированные реальные измерения по отдельному OT gate. Не трактовать концепцию как уже реализованный алгоритм обнаружения аварий.
+
+#### 22.9.1 Режимы и поведение оператора
+
+| Режим | Поведение | Приоритет пользователя |
+|---|---|---|
+| \`MANUAL\` | Выбирает конкретный EquipmentInstance; Inspector и камера удерживаются на нём | Ручной выбор блокирует автоматическое смещение холста |
+| \`AUTO_TOUR\` | Последовательно обходит выбранную группу узлов, по умолчанию через 20 секунд; доступны Pause, Resume, Next, Previous, Pin | Любое редактирование, ввод параметров и модальные окна автоматически приостанавливают обход |
+| \`SMART_FOCUS\` | Подозрительные узлы из Smart Assessment приоритизируются перед обычным обзором | Если пользователь редактирует или закрепил узел, показать карточку «Посмотреть подозрение», но **не перемещать камеру насильно** |
+| \`WALLBOARD\` (P1) | Диспетчерское табло без активного редактирования; разрешено автоматическое приближение к подтверждённым предупреждениям | Ограничивать частоту переходов, исключить дрожание камеры и циклы внимания |
+
+**Alarm/Events — независимый канал:** CRITICAL-события должны сразу появляться в панели тревог независимо от режима, размера графа и наличия подтверждённого Focus. Smart Focus **не заменяет** аварийную сигнализацию, E-stop, PLC interlocks и эксплуатационные регламенты.
+
+**Частота:** 20 секунд — конфигурируемое начальное значение для AUTO_TOUR, не частота опроса датчиков и не интервал анализа аномалий. За 99 узлов полный обычный обход занимает 33 минуты; SMART_FOCUS не должен ждать завершения очереди. Анализ данных запускается по поступлению измерений или выделенному schedule, а не по таймеру смены камеры.
+
+#### 22.9.2 Конвейер оценки и структура данных
+
+\`Observation → SignalQualityGate → Rule/TrendEvaluator → SuspicionEvent → FocusScheduler → Viewport/Inspector\`
+
+- \`Observation\`: \`siteId, blueprintId, blueprintRevision, activationSetId?, processUnitId, equipmentId, signalKey, value, engineeringUnit, sourceTimestampUtc, receivedTimestampUtc, quality, provenance\`; \`quality=GOOD|UNCERTAIN|BAD|STALE\`. Все значения отображаются с источником и временем. Симуляция всегда \`provenance=SIMULATED\`.
+- \`AssessmentRule\`: \`ruleId, equipmentTemplateKey/version, signalKey, baseline?, lowThreshold?, highThreshold?, trendWindow, minViolationDuration, clearHysteresis, cooldown, severityPolicy\`. Пороги индивидуальны для типа оборудования, технологического контекста и утверждённой спецификации; нельзя установить один глобальный «опасный градус» для любых насосов.
+- \`SuspicionEvent\`: \`eventId, siteId, equipmentId, signalKey, ruleId, severity, firstObservedAt, lastObservedAt, currentValue?, ruleEvidence, signalQuality, status=OPEN|ACKNOWLEDGED|RESOLVED, source\`. Создание события — диагностическое, не физическое действие.
+- \`FocusCandidate\`: \`eventId, processUnitId, equipmentId, severity, confidenceOrQuality, reasonCode, navigationHint, revisionRef, lastFocusedAt\`. Очередь имеет явные дедупликацию, ограничение размера и приоритет; не становится отдельным хранилищем инженерных фактов.
+- \`FocusState\`: \`mode, pinnedEquipmentId?, focusedEquipmentId?, pausedReason?, autoTourIntervalSeconds=20, lastTransitionAt\`. Хранить отдельно от \`ProcessBlueprint\`, физических координат ViewLayout и \`PlantActivationSet\`. Фокус/камера не изменяют инженерную ревизию и не вызывают Impact Analysis.
+
+**Условия подтверждения подозрения (сначала deterministic rules):** валидное и достаточно свежее наблюдение; превышение квалифицированного порога/изменение тренда; выдержка minViolationDuration; hysteresis для закрытия; cooldown для повторного привлечения внимания. \`BAD/STALE/UNKNOWN\` не трактовать как достоверный перегрев: показывать отдельную проблему качества/потери связи. ML/Tribuo/ONNX пока НЕ являются необходимой зависимостью.
+
+**Приоритеты:** CRITICAL > WARNING > WATCH > NORMAL; вторично — свежесть события, качество сигнала и давность последнего просмотра. При одинаковых условиях использовать стабильную сортировку. Повторные события одного \`siteId/equipmentId/signalKey/ruleId\` объединяются. Контроль anti-flapping исключает постоянные прыжки между двумя предупреждениями.
+
+**Навигация:** при подтверждённом Focus → найти EquipmentInstance в соответствующем ProcessUnit → подсветить узел и связанные измерительные сигналы → при разрешении режима плавно центрировать/масштабировать React Flow viewport → раскрыть Inspector с параметрами, временным рядом и причиной → предоставить действия \`Pin / Acknowledge / Next / Close\`. В Plant Overview из 99 модулей сначала подсветить ProcessUnit, а внутренний граф открывать по запросу; не загружать одновременно графы всех линий.
+
+**Безопасность:** Smart Assessment/Focus не получает PLC write credentials, не изменяет параметры оборудования или состояние промышленного контроллера. Запрет подавления или сокрытия критической тревоги при Pin/Pause/Edit. При отсутствии сети/потоке stale events показывать неизвестное состояние, не симулировать «всё нормально». Рекомендации, а не исполнительные команды.
+
+#### 22.9.3 Рамки MVP и расширений
+
+**R0.6D / R0.6E (P1, virtual HMI):** \`MANUAL\`, \`AUTO_TOUR\`, \`SMART_FOCUS\` на искусственных измерениях и детерминированных правилах; Highlight/Inspector, пользовательский Pin/Pause и Diagnostics. Отдельный \`WALLBOARD\` и реальные сигналы — последующие этапы. R0.6 P0 Save/Reopen/Validate не блокируется отсутствием этой функции.
+
+**После SCADA/Telemetry:** signal quality, real event timestamps, historian/trends, alarm lifecycle, site-approved thresholds, suppression policies (не E-stop). После Production Intelligence: оценка аномалий, confidence, влияние на связанные линии через BlueprintImpactAnalyzer; score используется как сигнал очереди, но не для управления PLC.
+
+**Engineering Inspector** всегда показывает физические параметры шаблона (паспортные данные, порты, capabilities) отдельно от live/virtual signals и ML-предложений. При переключении focus source-of-truth не меняется.
+
+#### 22.9.4 Требования и тестовые контракты
+
+| ID | Приоритет | Требование | Acceptance |
+|---|---|---|---|
+| FOCUS-001 | P1 | Раздельные Assessment / Focus компоненты и типизированные события | SC-FOCUS-001, 002 |
+| FOCUS-002 | P1 | Manual selection, Pin и Auto Tour 20s config; пауза при редактировании | SC-FOCUS-003, 004 |
+| FOCUS-003 | P1 | Подозрение получает приоритет, но не перехватывает ручной Canvas | SC-FOCUS-005, 006 |
+| FOCUS-004 | P1 | Quality/stale/gap, threshold persistence, hysteresis and cooldown | SC-FOCUS-007, 008 |
+| FOCUS-005 | P1 | Focus inspector содержит evidence, timestamp, units и provenance | SC-FOCUS-009 |
+| FOCUS-006 | P1 | Bounded queue, event deduplication, stable ordering, anti-flapping | SC-FOCUS-010, 011 |
+| FOCUS-007 | P1 | Focus не создаёт BlueprintRevision и не модифицирует ViewLayout x/y | SC-FOCUS-012 |
+| FOCUS-008 | P1 | 99-unit Overview с lazy navigation и независимой панелью alarm | SC-FOCUS-013 |
+| FOCUS-009 | P1 | Safety isolation: no PLC writes, simulated signal indicator, alarm never hidden | SC-FOCUS-014 |
+| FOCUS-010 | P2 | Реальные SCADA/trend и explainable Smart Assessment после OT квалификации | SC-FOCUS-015 (PLANNED LATER) |
+
+Все новые SC-FOCUS имеют статус **RED / PLANNED**, пока не реализованы и не пройдены в CI.
+
+| ID | Проверяемое поведение / oracle |
+|---|---|
+| SC-FOCUS-001 | Для N=99 узлов независимо от текущей камеры оцениваются все поступившие Observation |
+| SC-FOCUS-002 | Одинаковый набор показаний и timestamp даёт одинаковые события при replay |
+| SC-FOCUS-003 | AUTO_TOUR переключает узел по виртуальным часам через 20 секунд, pause/resume сохраняют позицию |
+| SC-FOCUS-004 | При вводе параметра, drag & drop, открытом диалоге, Pin — таймер не смещает viewport |
+| SC-FOCUS-005 | Подтверждённый WARNING вне очереди попадает в Smart Focus раньше очередного обычного узла |
+| SC-FOCUS-006 | Во время ручной работы WARNING создаёт заметную карточку без принудительного движения; CRITICAL остаётся в Alarm Panel |
+| SC-FOCUS-007 | Одиночный выброс на долю minDuration не создаёт ложное подтверждённое событие |
+| SC-FOCUS-008 | BAD/STALE/UNCERTAIN не выдаётся за достоверное превышение температуры; отдельный quality diagnostic |
+| SC-FOCUS-009 | Inspector показывает temperature/unit/trend/rule, время последнего сигнала и SIMULATED watermark |
+| SC-FOCUS-010 | Повтор события не создаёт несколько конкурирующих FocusCandidates; bounded queue соблюдена |
+| SC-FOCUS-011 | Hysteresis/cooldown предотвращает быстрый ping-pong Focus между двумя насосами |
+| SC-FOCUS-012 | Изменить focusedEquipmentId, затем Save/Reopen: физический graph hash/revision неизменны |
+| SC-FOCUS-013 | Для 99 ProcessUnits выбирается L037 без рендеринга внутренних узлов остальных 98 |
+| SC-FOCUS-014 | Отключить/испортить Assessment, переключить режим — запрещены любые PLC-command calls, критическая тревога не исчезает |
+| SC-FOCUS-015 | После квалифицированного SCADA integration real telemetry → suspicion → explainable Focus; provenance и site isolation сохранены |
+
+**Definition of Done:** React Studio умеет опциональный Auto Tour/Smart Focus на виртуальных показаниях, предупреждение навигирует к реальному stable equipmentId и не прерывает ручную работу, качество сигнала проверяется, критические тревоги сохраняют независимую видимость, ни фокус, ни оценка не изменяют Blueprint и не управляют оборудованием. CI: unit fake clock + replay tests; Playwright mode/viewport/Inspector E2E; Java contract tests для provenance, stale and asset IDs. Реальная телеметрия, ML и автоматическое промышленное управление **не входят в это DoD**.
