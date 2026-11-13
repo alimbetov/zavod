@@ -2,6 +2,9 @@ package kz.zavod.blueprint;
 
 import java.util.UUID;
 import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import kz.zavod.telemetry.SignalRegistryService;
 import kz.zavod.telemetry.TelemetryContracts.*;
 import kz.zavod.blueprint.domain.GuidedBlueprintBuilder;
@@ -69,6 +72,44 @@ class PlantDemoDevApiPostgresTest {
         mvc.perform(get(path)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.signalCount").value(1))
                 .andExpect(jsonPath("$.transitionCount").value(3));
+    }
+
+    @Test void concurrentDemoSamplesUseOneSignalMappingWithoutLostObservations() throws Exception {
+        String site="local-"+UUID.randomUUID();
+        sites.saveAndFlush(new SiteEntity(site,10));
+        var bp=blueprints.create(site);
+        blueprints.saveDraft(site,bp.id(),1,GuidedBlueprintBuilder.concreteStarter(
+                bp.id(),2,10,"CP01",EquipmentCatalog.standard()));
+        String base="/api/v1/sites/"+site+"/blueprints/"+bp.id()+"/revisions/2/demo";
+        String header="X-Zavod-Dev-Write";
+        mvc.perform(post(base+"/approve").header(header,"true")).andExpect(status().isOk());
+        mvc.perform(post(base+"/publish").header(header,"true")).andExpect(status().isOk());
+        mvc.perform(post(base+"/activate").header(header,"true")).andExpect(status().isOk());
+        var starting=new CountDownLatch(1);
+        try(var executor=Executors.newFixedThreadPool(2)) {
+            var first=executor.submit(()->{
+                starting.await();
+                return mvc.perform(post(base+"/simulate").header(header,"true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"scenario\":\"NORMAL\"}")).andReturn().getResponse().getStatus();
+            });
+            var second=executor.submit(()->{
+                starting.await();
+                return mvc.perform(post(base+"/simulate").header(header,"true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"scenario\":\"ALARM\"}")).andReturn().getResponse().getStatus();
+            });
+            starting.countDown();
+            org.junit.jupiter.api.Assertions.assertEquals(200,first.get(20,TimeUnit.SECONDS));
+            org.junit.jupiter.api.Assertions.assertEquals(200,second.get(20,TimeUnit.SECONDS));
+        }
+        mvc.perform(get(base)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.signalCount").value(1))
+                .andExpect(jsonPath("$.transitionCount").value(3));
+        mvc.perform(get(base.replace("/demo","/telemetry")+"?unitId=CP01-MIX"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].history.length()").value(2));
+        ledger.verifySite(site);
     }
 
     @Test void completeConcreteDemoUsesRealLifecycleAndPersistsSimulatedAlarm() throws Exception {
