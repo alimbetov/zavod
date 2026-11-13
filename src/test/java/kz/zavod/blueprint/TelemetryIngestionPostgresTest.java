@@ -104,6 +104,22 @@ class TelemetryIngestionPostgresTest {
                 .map(TelemetrySample::sourceEventId).toList());
     }
 
+    @Test void acceptedFutureTimestampCannotBeHiddenByPreviousGoodReading() {
+        var def=createSignal();
+        Instant instant=Instant.now();
+        ingestion.ingestSimulated(def.siteId(),def.blueprintId(),2,def.id(),
+                sample("previous-good",instant.minusSeconds(4),"2.5"));
+        // This is ALLOWED by the ingestion clock-skew budget (<= 30 seconds).
+        // It must remain visible to the quality evaluator rather than being
+        // silently excluded by the SQL latest() WHERE clause.
+        ingestion.ingestSimulated(def.siteId(),def.blueprintId(),2,def.id(),
+                sample("clock-ahead",instant.plusSeconds(10),"6.2"));
+        var reading=ingestion.latest(def.siteId(),def.blueprintId(),2,
+                def.id(),Instant.now());
+        assertEquals(Status.UNTRUSTED,reading.status());
+        assertNull(reading.value(),"a future timestamp cannot expose stale GOOD as CURRENT");
+    }
+
     @Test void crossSiteFutureTimestampAndInvalidQueriesAreDenied(){
         var def=createSignal();
         String other="other-"+UUID.randomUUID();
