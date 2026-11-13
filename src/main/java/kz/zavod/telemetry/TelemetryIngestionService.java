@@ -94,12 +94,17 @@ public class TelemetryIngestionService {
         requireBinding(siteId,blueprintId,revision,signalId);
         if(from==null||to==null||!from.isBefore(to)||limit<1||limit>500)
             throw new IllegalArgumentException("INVALID_TELEMETRY_QUERY");
-        return List.copyOf(jdbc.query(
+        // Limit the most recent N readings, not the oldest N in the window.
+        // The query uses DESC for efficient index-backed top-N and the API
+        // returns chronological ASC for the chart and downstream callers.
+        var latest=new java.util.ArrayList<>(jdbc.query(
                 "select signal_id,source_event_id,source_kind,sample_value,unit_code,"+
                 "source_time,received_at,quality from telemetry_sample "+
                 "where signal_id=? and source_time>=? and source_time<? "+
-                "order by source_time asc,source_event_id asc limit ?",
+                "order by source_time desc,source_event_id desc limit ?",
                 (rs,n)->sample(rs),signalId.toString(),utc(from),utc(to),limit));
+        java.util.Collections.reverse(latest);
+        return List.copyOf(latest);
     }
 
     @Transactional(readOnly=true)
