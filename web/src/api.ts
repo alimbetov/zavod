@@ -1,4 +1,4 @@
-import type {Blueprint,CatalogEntry,Diagnostic,XRayView} from './model';
+import type {Blueprint,CatalogEntry,Diagnostic,XRayView,TelemetrySignalView} from './model';
 const ROOT='/api/v1';
 export class ApiFailure extends Error {
   constructor(public status:number, message:string) { super(message); }
@@ -39,6 +39,9 @@ export const studioApi={
   }):Promise<{viewId:string;layoutVersion:number;blueprintRevision:number}> =>
     request(scope(site,id)+'/layouts/'+encodeURIComponent(viewId),{
       method:'PUT',headers:{'X-Zavod-Dev-Write':'true'},body:JSON.stringify(body)}),
+  telemetry:(site:string,id:string,revision:number,unitId:string):Promise<TelemetrySignalView[]> =>
+    request(scope(site,id)+'/revisions/'+revision+'/telemetry?unitId='+
+      encodeURIComponent(unitId)+'&minutes=60&limit=100'),
   xray:(site:string,id:string,unitId:string):Promise<XRayView> =>
     request(scope(site,id)+'/x-ray?unitId='+encodeURIComponent(unitId)),
 };
