@@ -10,6 +10,7 @@ on:
       - 'scripts/test-bcq-035-migration.sh'
       - 'scripts/test-bcq-g42-ledger-privileges.sh'
       - 'scripts/test-bcq-g42-pitr.sh'
+      - 'scripts/test-bcq-g42-populated-upgrade.sh'
       - 'scripts/sql/**'
       - '.github/workflows/bcq-g3-process-recovery.yml'
   workflow_dispatch:
@@ -28,6 +29,8 @@ jobs:
           cache: maven
       - name: Check BCQ-035 PostgreSQL additive migration and replay
         run: bash scripts/test-bcq-035-migration.sh
+      - name: Stage populated pre-upgrade DB and run G4+G4.2 SQL migrations with restricted runtime validate
+        run: bash scripts/test-bcq-g42-populated-upgrade.sh
       - name: Apply G4.2 PostgreSQL ledger migration and prove runtime privileges
         run: bash scripts/test-bcq-g42-ledger-privileges.sh
       - name: Force Java process crash, read same PostgreSQL, restore backup
