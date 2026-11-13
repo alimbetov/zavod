@@ -35,6 +35,18 @@ public final class BlueprintCoreSmoke {
         ok(modified.units().get(0).kind()==UnitKind.CIRCUIT,"unit kind supports circuit without new backend");
         error(new ProcessBlueprint(plant.id(),2,99,plant.units(),plant.sharedAssets(),plant.transfers(),List.of(new Dependency("L001","L002"),new Dependency("L002","L001"))),"INTERUNIT_DEPENDENCY_CYCLE");
         ok(BlueprintValidator.validate(plant).stream().anyMatch(f->f.code().equals("UNBOUND_BOUNDARY")&&f.severity()==BlueprintValidator.Severity.WARNING),"unbound laboratory boundary visible");
+        var inlet=new Port("water-in",Direction.IN,FlowKind.MATERIAL,"water",1,1);
+        var outlet=new Port("water-out",Direction.OUT,FlowKind.MATERIAL,"water",1,1);
+        var pump=new Equipment("pump","water-pump",1,List.of(inlet,outlet));
+        var valve=new Equipment("valve","shutoff-valve",1,List.of(inlet,outlet));
+        var loop=new ProcessUnit("hydro-circuit",UnitKind.CIRCUIT,"hydroponics.nft.v1",
+                List.of(pump,valve),List.of(new Connection("pump","water-out","valve","water-in"),
+                new Connection("valve","water-out","pump","water-in")),List.of(),List.of(),List.of(),true);
+        var hydro=new ProcessBlueprint(UUID.randomUUID(),1,99,List.of(loop),List.of(),List.of(),List.of());
+        ok(BlueprintValidator.validate(hydro).stream().anyMatch(x->x.code().equals("RECIRCULATION_UNQUALIFIED")),
+                "hydroponic feedback loop explicitly flagged as unqualified");
+        ok(BlueprintReadiness.blockers(hydro,EquipmentCatalog.standard()).stream().anyMatch(x->x.code().equals("RECIRCULATION_UNQUALIFIED")),
+                "hydroponic loop cannot be published merely by toggling a flag");
         rejects(()->BlueprintImpactAnalyzer.analyze(plant,Set.of("UNKNOWN")),"unknown unit change rejected");
         System.out.println("PASS "+count+" Blueprint core checks");
     }
