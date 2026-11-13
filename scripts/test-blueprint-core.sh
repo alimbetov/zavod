@@ -11,7 +11,8 @@ javac --release 21 -d "$BIN" \
  src/test/java/kz/zavod/blueprint/BlueprintCoreSmoke.java \
  src/test/java/kz/zavod/blueprint/BlueprintHardeningSmoke.java \
  src/test/java/kz/zavod/blueprint/BlueprintFuzzSmoke.java \
- src/test/java/kz/zavod/blueprint/EngineeringPropertiesSmoke.java
+ src/test/java/kz/zavod/blueprint/EngineeringPropertiesSmoke.java \
+ src/test/java/kz/zavod/blueprint/BlueprintBusinessCoreContractSmoke.java
 java -cp "$BIN" kz.zavod.blueprint.BlueprintCoreSmoke
 
 java -cp "$BIN" kz.zavod.blueprint.BlueprintHardeningSmoke
@@ -19,3 +20,5 @@ java -cp "$BIN" kz.zavod.blueprint.BlueprintHardeningSmoke
 java -cp "$BIN" kz.zavod.blueprint.BlueprintFuzzSmoke
 
 java -cp "$BIN" kz.zavod.blueprint.EngineeringPropertiesSmoke
+
+java -cp "$BIN" kz.zavod.blueprint.BlueprintBusinessCoreContractSmoke
