@@ -70,3 +70,51 @@ test('three concrete lines: move SVG, save independent layout, reopen; add equip
   expect(persisted.units.find((u:{id:string})=>u.id==='CP01-MIX').equipment.length).toBe(5);
   await page.screenshot({path:test.info().outputPath('rs1-real-postgres-reopen.png'),fullPage:true});
 });
+
+test('TF-03: real PostgreSQL simulated telemetry is revision-bound, visible and fail-closed',async({page})=>{
+  await page.goto('/');
+  await page.getByRole('button',{name:'Создать локальный стенд'}).first().click();
+  await page.getByRole('button',{name:'Бетонный завод'}).click();
+  await page.getByRole('button',{name:'Сохранить Draft'}).click();
+  await expect(page.getByText('✓ Сохранено')).toBeVisible();
+  const ref=await page.evaluate(()=>window.localStorage.getItem('zavod.studio.local-project'));
+  const {siteId,blueprintId}=JSON.parse(ref!) as {siteId:string;blueprintId:string};
+  const saved=await (await page.request.get('/api/v1/sites/'+siteId+'/blueprints/'+blueprintId)).json();
+  expect(saved.revision).toBe(2);
+  const unit=saved.units.find((u:{id:string})=>u.id==='CP01-MIX');
+  expect(unit).toBeDefined();
+  const equipment=unit.equipment[0];
+  expect(equipment).toBeDefined();
+  const base='/api/v1/sites/'+siteId+'/blueprints/'+blueprintId+
+    '/revisions/'+saved.revision+'/telemetry';
+  const signalId=crypto.randomUUID();
+  const setup=await page.request.post(base+'/signals',{
+    headers:{'X-Zavod-Dev-Write':'true'},
+    data:{id:signalId,siteId,blueprintId,blueprintRevision:2,
+      unitId:'CP01-MIX',equipmentId:equipment.id,signalKey:'simulated-pressure',
+      unitCode:'bar',sourceKind:'SIMULATED',staleAfter:'PT10S'}
+  });
+  expect(setup.status()).toBe(201);
+  await page.getByRole('button',{name:/CP01-MIX/}).first().click();
+  const monitor=page.getByRole('region',{name:'Мониторинг телеметрии'});
+  await expect(monitor.getByText('NO_DATA').first()).toBeVisible();
+  const sample=await page.request.post(base+'/signals/'+signalId+'/samples',{
+    headers:{'X-Zavod-Dev-Write':'true'},
+    data:{eventId:'tf03-e2e-1',value:2.5,unitCode:'bar',
+      sourceTime:new Date(Date.now()-2000).toISOString(),quality:'GOOD'}
+  });
+  expect(sample.status()).toBe(200);
+  await monitor.getByRole('button',{name:'Обновить'}).click();
+  await expect(monitor.getByText('CURRENT')).toBeVisible();
+  await expect(monitor.getByText('2.5 bar')).toBeVisible();
+  const stale=await page.request.post(base+'/signals/'+signalId+'/samples',{
+    headers:{'X-Zavod-Dev-Write':'true'},
+    data:{eventId:'tf03-e2e-2',value:1.1,unitCode:'bar',
+      sourceTime:new Date(Date.now()-45000).toISOString(),quality:'GOOD'}
+  });
+  expect(stale.status()).toBe(200);
+  // Older sample must not replace the newer source timestamp.
+  await monitor.getByRole('button',{name:'Обновить'}).click();
+  await expect(monitor.getByText('2.5 bar')).toBeVisible();
+  await page.screenshot({path:test.info().outputPath('tf03-real-postgres-monitor.png'),fullPage:true});
+});
