@@ -1752,3 +1752,91 @@ CI проверил также три предыдущих JPA/PostgreSQL тес
 | SC-FOCUS-015 | После квалифицированного SCADA integration real telemetry → suspicion → explainable Focus; provenance и site isolation сохранены |
 
 **Definition of Done:** React Studio умеет опциональный Auto Tour/Smart Focus на виртуальных показаниях, предупреждение навигирует к реальному stable equipmentId и не прерывает ручную работу, качество сигнала проверяется, критические тревоги сохраняют независимую видимость, ни фокус, ни оценка не изменяют Blueprint и не управляют оборудованием. CI: unit fake clock + replay tests; Playwright mode/viewport/Inspector E2E; Java contract tests для provenance, stale and asset IDs. Реальная телеметрия, ML и автоматическое промышленное управление **не входят в это DoD**.
+
+
+---
+
+## 24. INT-0 / INT-1 — Implementation specification: ML-ready Foundation and Smart Line Designer (2026-11-13)
+
+**Status: APPROVED REQUIREMENTS / IMPLEMENTATION PLANNED; NOT CODE-COMPLETE.** This section is part of the sole canonical master specification, refines INT-001…INT-008 and Focus specifications in earlier sections; no duplicate master-TZ. Implement in Java 21/Spring Boot/JPA architecture incrementally during R0.6. No dependency on Tribuo, Timefold, ONNX or extra ML service in INT-0. Feature flags disabled by default; avoid any PLC command path. Assessment is advisory and never changes a published Blueprint.
+
+### 24.1 Functional requirements and domain contracts
+
+| ID | Contract | Required fields and invariants |
+|---|---|---|
+| INT0-FR-001 | PhysicalAssetRefV1 | siteId, blueprintId, blueprintRevision, processUnitId, equipmentInstanceId, equipmentTypeKey, equipmentTypeVersion, optional installedAssetId. Equipment instance is stable across Save/Reopen and layout-only edits; installed asset identity is site-owned, never inferred from type. |
+| INT0-FR-002 | MeasurementSampleV1 | sampleId, asset ref, signalKey, finite numeric value, declared physical unit/dimension, eventTimeUtc, ingestedAtUtc, source=PHYSICAL/SIMULATED/IMPORTED, quality=GOOD/UNCERTAIN/BAD/MISSING/STALE, provenance. Distinguish event and ingestion time. Reject NaN, infinity, incompatible units and invalid lineage. Bad/stale/missing cannot silently become good. |
+| INT0-FR-003 | AssessmentFindingV1 | findingId, assessmentRunId, siteId, blueprintId, revision, stable equipmentId/unitId/portId target, ruleCode, severity, source=STATIC_DESIGN/RULE/STATISTICS/ML, reasonCode, structured evidence, evaluatedAt, ruleEngineVersion, dataQuality. Static design finding is NOT a live physical alarm. |
+| INT0-FR-004 | FocusRecommendationV1 | siteId, blueprint revision, targetUnitId, targetEquipmentId, findingId, focusPriority, reasonCode, generatedAt, expiresAt. Advisory only; UI decides whether to navigate; manual focus wins. |
+| INT0-FR-005 | PredictionProvider SPI | capabilities() and predict(request) returning typed SUCCESS/UNAVAILABLE/INSUFFICIENT_DATA/INCOMPATIBLE_SCHEMA with schemaVersion, optional modelId/version and evidence. DisabledPredictionProvider returns UNAVAILABLE, never fabricated score/risk. |
+| INT0-FR-006 | ModelMetadata contract (future) | model id/version, feature schema version, training cutoff, dataset provenance, evaluation metrics, validation split and rollback reference. No actual model store/weights in INT-0. |
+| INT0-FR-007 | Identity and revision lineage | Every persisted/returned finding is scoped to server-authorized site and immutable Blueprint revision. Explicit major schema negotiation; no JPA entity or ReactFlow serialization as public API. |
+| INT0-FR-008 | Unit and quality normalization | Small explicit versioned unit registry (supported dimensions only); conversions must be dimensionally valid and testable. Per-signal staleness bound and source clock skew configuration; no zero-fill for missing. |
+
+### 24.2 Implementation modules
+
+Implement within the existing Java build, initially as packages rather than a separately deployed service:
+
+- intelligence.contract: immutable Java records/enums, strict validation, schema version.
+- intelligence.assessment: DeterministicClock, DesignAssessmentRequest, AssessmentEngine, normalized finding/evidence and rule mapping.
+- intelligence.spi: PredictionProvider, DisabledPredictionProvider; zero Tribuo imports.
+- intelligence.design: Blueprint-to-graph adapter, version-aware catalog resolver, GraphAnalyzer, RuleEngine, capacity-estimate guardrail; JGraphT allowed as internal algorithm library but not persisted domain.
+- frontend assessment/focus adapter under R0.6: findings panel, exact unit/equipment/port highlight, lazy Overview navigation. No independent frontend equipment registry.
+
+Reuse BlueprintValidator for hard invalidity, BlueprintDiff and BlueprintImpactAnalyzer for downstream impact, existing ProcessBlueprint and revision persistence; do not create redundant rules or an O(k²) shared-asset graph.
+
+### 24.3 INT-0 implementation slices
+
+**INT-0A (contracts + quality)**: Records/enums, JSON schema/versioned DTO, stable identity, telemetry quality policy and unit conversion tests; no new database required just for type declarations. Verify historical asset references after revision changes, Save/Reopen and layout-only moves.
+
+**INT-0B (assessment + prediction seam)**: Deterministic server-side static design assessment using immutable snapshot and injected clock, stable sorted evidence and finding IDs, stub provider returning UNAVAILABLE. No side effects, zero Blueprint revision/hash change and no PLC I/O. If a persistence requirement later emerges, approve separate append-only assessment-run schema.
+
+**INT-0C (Focus)**: map findings to stable FocusRecommendation; no eager navigation to deleted/foreign equipment; manual selection and editing suppress auto-navigation; 20-second Auto Tour default, bounded queue, deduplication, cooldown and hysteresis according to §23. SIMULATED source visibly watermarked. Critical physical alarms must remain independent from view focus.
+
+**INT-0D (qualification)**: JUnit 21-compatible tests, Jackson roundtrip, deterministic replay, site-boundary and PostgreSQL Save/Reopen integration, basic property testing, no PLC writes. Browser E2E only after React Studio exists.
+
+### 24.4 INT-1 Smart Line Designer
+
+Analyze immutable Blueprint graph with pinned catalog versions. Produce explainable findings for disconnected equipment, missing or invalid ports, compatibility, cardinality, invalid dependency, overloaded shared assets and downstream impact. Existing structural validation remains authoritative; INT-1 adds context and recommendations, not different validity decisions.
+
+Qualified throughput estimation is optional and guarded by actual comparable quantities, units, process times, utilization and buffer assumptions. On a validated simple serial line with comparable 20 -> 12 -> 15 tonnes/hour capacities and no special effects, explain conditional upper bound 12 tonnes/hour and identify limiting asset. On mixed material units, batch, recirculation, fan-out or missing timing, return INSUFFICIENT_DESIGN_DATA; never pretend to know measured throughput. Distinguish DESIGN_ESTIMATE from MEASURED and SIMULATED.
+
+Assessment output must include assessmentRunId, ruleEngineVersion, siteId, revision, diagnostic IDs/targets, reason/evidence, provenance and stable ordering. Graph traversal target approximately O(V+E) for basic checks; no all-pairs resource expansion. Measure memory and latency for 10/50/99 units, do not declare unmeasured SLAs.
+
+### 24.5 API and UX integration
+
+Only after R0.6 secure site-scoped backend bridge: optional POST /api/v1/sites/{siteId}/blueprints/{blueprintId}/assess-design with server-loaded immutable revision, authorized actor and bounded request/time budget. No new public API under current deny-all filter. No public GET findings history until append-only persistence is implemented and qualified. Typed 400/401/403/404/409/413/422 errors. Never accept self-declared site membership, physical asset ownership or rule engine version from untrusted client payload.
+
+Studio diagnostics: click Finding -> select correct ProcessUnit in 99-unit Overview -> lazy-load selected Canvas -> highlight exact equipment/port and evidence; do not render all 99 detailed graphs. Focus Candidate never mutates Blueprint or activates equipment. Human manual focus overrides automatic rotation; keep cross-site separation.
+
+### 24.6 Acceptance tests (write RED before GREEN)
+
+| Test ID | Scenario | Expected oracle |
+|---|---|---|
+| SC-INT0-001 | Save/Reopen plus layout-only changes | Stable equipment identity; layout does not change engineering revision |
+| SC-INT0-002 | Revision N vs N+1, equipment replacement | Findings reference exact historical revision, no silent asset remap |
+| SC-INT0-003 | Foreign site/unauthorized assessment | Deny without data leak or state mutation |
+| SC-INT0-004 | Correct timestamp, unit, provenance | Deterministic JSON roundtrip preserves both timestamps |
+| SC-INT0-005 | BAD/STALE/UNCERTAIN/MISSING and NaN | Reject invalid data or downgrade quality, never good-normalize |
+| SC-INT0-006 | Supported vs incompatible units | Only compatible dimensions converted |
+| SC-INT0-007 | DisabledPredictionProvider | UNAVAILABLE, no model or PLC I/O |
+| SC-INT0-008 | Same clock + revision + rule version | Byte-equivalent sorted findings/evidence and IDs |
+| SC-INT0-009 | Assessment + Focus | Engineering graph/hash/revision, activation unchanged |
+| SC-INT0-010 | Manual focus, repeated findings, deleted node | Manual priority, deduplication, cooldown, target validity |
+| SC-INT1-001 | Invalid flow direction, medium, cardinality | Existing validator remains authoritative; precise evidence |
+| SC-INT1-002 | 99-line L037 impact | Exact affected IDs and reasons, no unrelated units |
+| SC-INT1-003 | Ten consumers overbook shared compressor | Single resource-focused overload, no pairwise graph explosion |
+| SC-INT1-004 | Qualified 20->12->15 t/h serial capacity | DESIGN_ESTIMATE conditional 12 t/h limit and assumptions |
+| SC-INT1-005 | Mixed units, batch, recirculation or missing capacity | INSUFFICIENT_DESIGN_DATA, no fictional physical value |
+| SC-INT1-006 | Unknown pinned equipment version/deleted port | Explicit blocker, no silent auto-update to latest catalog |
+| SC-INT1-007 | 99-unit Overview -> finding on L037 | Only L037 inner graph loaded, correct highlight |
+| SC-INT1-008 | 10/50/99 benchmarks; seeded graph fuzz | Recorded latency/memory and stable correctness, no unsupported claim |
+| SC-INT1-009 | Authenticated browser E2E + backend CI | User story passes against real Java/PostgreSQL, unauthorized denied |
+
+### 24.7 Implementation gates and exclusions
+
+G-INT0-A: Java contracts, normalized quality, identity and serialization pass tests. G-INT0-B: assessment engine and disabled provider pass replay/no-side-effect checks. G-INT0-C: Focus adapter passes manual-priority, dedup and E2E once Studio exists. G-INT1-A: graph findings and guarded throughput pass domain tests. G-INT1-B: 99-unit benchmarks and independent engineering review of physical quantities.
+
+Sequence: INT-0A/B immediately; INT-0C alongside R0.6 Studio; INT-1 Graph Analyzer during R0.6C/R1. INT-2 Tribuo only after trustworthy historian, labeled/defensible baseline and measured false-alert performance; INT-3 after production events and duration/energy data; INT-4 after service and failures; INT-5 after validated scheduling/resource constraints. No ML microservice, model training, real PLC write, automatic publish, fictitious real alarm, or mandatory security bypass in this scope.
+
+**Definition of Done:** INT-0 only when production Java contracts and tests exist, revisions and site-scoping work and disabled prediction is explicit. INT-1 only when explainable findings are linked to real Studio targets and real E2E/qualification passes. Until then all scenarios are PLANNED, not PASS.
