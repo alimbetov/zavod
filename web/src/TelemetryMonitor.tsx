@@ -42,23 +42,47 @@ export function TelemetryMonitor({site,blueprintId,revision,unitId}: {
   const [error,setError]=useState<string|null>(null);
   const [loading,setLoading]=useState(false);
   const [reload,setReload]=useState(0);
+  const [minutes,setMinutes]=useState(60);
+  const [autoRefresh,setAutoRefresh]=useState(false);
+  const [lastUpdated,setLastUpdated]=useState<string|null>(null);
+  useEffect(()=>{
+    if(!autoRefresh||!site||!blueprintId||!unitId||revision<1)return;
+    // Recheck server-evaluated quality; never extrapolate a GOOD sample on client.
+    const timer=window.setInterval(()=>{
+      if(document.visibilityState==='visible')setReload(n=>n+1);
+    },15000);
+    return ()=>window.clearInterval(timer);
+  },[autoRefresh,site,blueprintId,revision,unitId]);
   useEffect(()=>{
     if(!site||!blueprintId||!unitId||revision<1){
       setSignals([]);setError(null);return;
     }
     let active=true;
     setLoading(true);setError(null);setSignals([]);
-    studioApi.telemetry(site,blueprintId,revision,unitId).then(data=>{
-      if(active)setSignals(data);
+    studioApi.telemetry(site,blueprintId,revision,unitId,minutes).then(data=>{
+      if(active){setSignals(data);setLastUpdated(new Date().toISOString());}
     }).catch(e=>{
-      if(active){setSignals([]);setError(e instanceof Error?e.message:'Ошибка чтения телеметрии');}
+      if(active){setSignals([]);setLastUpdated(null);setError(e instanceof Error?e.message:'Ошибка чтения телеметрии');}
     }).finally(()=>{if(active)setLoading(false);});
     return ()=>{active=false;};
-  },[site,blueprintId,revision,unitId,reload]);
+  },[site,blueprintId,revision,unitId,reload,minutes]);
   return <section className="telemetry-monitor" aria-label="Мониторинг телеметрии">
     <div className="telemetry-heading"><strong>Мониторинг · SIMULATED</strong>
       <button className="soft" disabled={loading} onClick={()=>setReload(n=>n+1)}>Обновить</button>
     </div>
+    <div className="telemetry-controls">
+      <label>Интервал <select aria-label="Период телеметрии" value={minutes}
+        onChange={e=>setMinutes(Number(e.target.value))}>
+        <option value={5}>5 минут</option>
+        <option value={15}>15 минут</option>
+        <option value={60}>1 час</option>
+        <option value={360}>6 часов</option>
+        <option value={1440}>24 часа</option>
+      </select></label>
+      <label><input type="checkbox" checked={autoRefresh}
+        onChange={e=>setAutoRefresh(e.target.checked)}/> Автообновление · 15 с</label>
+    </div>
+    {lastUpdated&&!error&&<small className="muted">Обновлено: {new Date(lastUpdated).toLocaleTimeString()}</small>}
     <p className="muted tiny">Только локальная симуляция. Нет подключения к PLC и подтверждённых LIVE-сигналов.</p>
     {loading&&<p role="status">Загрузка измерений…</p>}
     {error&&<p role="alert" className="telemetry-error">Данные недоступны: {error}</p>}
