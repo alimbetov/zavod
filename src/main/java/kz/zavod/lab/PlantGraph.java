@@ -38,7 +38,8 @@ public final class PlantGraph {
             List<String> wiring=new ArrayList<>();
             for(Edge e:edges) wiring.add(indices.get(e.sourceId())+"."+e.sourcePort()+">"+indices.get(e.targetId())+"."+e.targetPort());
             Collections.sort(wiring);
-            return profile+"|"+nodes.stream().map(Node::typeKey).toList()+"|"+wiring+"|"+measurements;
+            List<String> measurementShape=measurements.stream().map(m->indices.get(m.sensorId())+">"+indices.get(m.monitoredNodeId())+":"+m.signalKey()).sorted().toList();
+            return profile+"|"+nodes.stream().map(Node::typeKey).toList()+"|"+wiring+"|"+measurementShape;
         }
     }
     /** Interline availability token, not an engineered pipe, meter or mass balance. */
