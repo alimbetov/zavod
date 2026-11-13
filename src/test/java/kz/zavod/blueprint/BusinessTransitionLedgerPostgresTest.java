@@ -59,7 +59,7 @@ class BusinessTransitionLedgerPostgresTest {
             members.saveAndFlush(new SiteMemberEntity(UUID.randomUUID().toString(),
                 site,entry.getKey(),entry.getValue()));
         var e=new Equipment("tank","water-tank",1,
-            List.of(new Port("out",Direction.OUT,FlowKind.MATERIAL,"water",0,1)));
+            List.of(new Port("water-out",Direction.OUT,FlowKind.MATERIAL,"water",0,1)));
         var u=new ProcessUnit("L1",UnitKind.LINE,"test.water-storage",
             List.of(e),List.of(),List.of(),List.of(),List.of(),false);
         drafts.saveDraft(new ProcessBlueprint(id,1,10,List.of(u),List.of(),List.of(),List.of()),0);
@@ -103,7 +103,7 @@ class BusinessTransitionLedgerPostgresTest {
         UUID nextBlueprint=UUID.randomUUID();
         ownership.saveAndFlush(new BlueprintSiteEntity(nextBlueprint.toString(),f.site()));
         var other=new Equipment("tank2","water-tank",1,
-            List.of(new Port("out",Direction.OUT,FlowKind.MATERIAL,"water",0,1)));
+            List.of(new Port("water-out",Direction.OUT,FlowKind.MATERIAL,"water",0,1)));
         var nextUnit=new ProcessUnit("L2",UnitKind.LINE,"test.water-storage",
             List.of(other),List.of(),List.of(),List.of(),List.of(),false);
         drafts.saveDraft(new ProcessBlueprint(nextBlueprint,1,10,List.of(nextUnit),
