@@ -13,9 +13,10 @@ public class StudioBlueprintService {
     private final SiteRepository sites;
     private final BlueprintSiteRepository assignments;
     private final BlueprintDraftService drafts;
+    private final EngineeringProjectRepository projects;
     public StudioBlueprintService(SiteRepository sites,BlueprintSiteRepository assignments,
-                                  BlueprintDraftService drafts) {
-        this.sites=sites;this.assignments=assignments;this.drafts=drafts;
+                                  BlueprintDraftService drafts,EngineeringProjectRepository projects) {
+        this.sites=sites;this.assignments=assignments;this.drafts=drafts;this.projects=projects;
     }
 
     @Transactional
@@ -44,6 +45,10 @@ public class StudioBlueprintService {
     @Transactional
     public ProcessBlueprint saveDraft(String siteId,UUID id,long expectedRevision,ProcessBlueprint input) {
         var site=requireOwner(siteId,id);
+        projects.findById(id.toString()).ifPresent(project->{
+            if(project.status()==EngineeringProjectEntity.Status.ARCHIVED)
+                throw new StudioConflictException("PROJECT_ARCHIVED");
+        });
         Objects.requireNonNull(input,"snapshot");
         if(!id.equals(input.id()))throw new IllegalArgumentException("BLUEPRINT_ID_MISMATCH");
         StudioInputLimits.check(input);
