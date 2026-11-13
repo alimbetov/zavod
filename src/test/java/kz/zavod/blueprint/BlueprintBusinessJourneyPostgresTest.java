@@ -359,7 +359,7 @@ class BlueprintBusinessJourneyPostgresTest {
         assertEquals(1,sets.countBySiteId(foreign.siteId()));
     }
 
-    @Test
+    @org.junit.jupiter.api.RepeatedTest(10)
     void concurrentApprovalIsExactlyOnceAndConflictIsDomainControlled() throws Exception {
         Fixture f=setup(3);
         ExecutorService pool=Executors.newFixedThreadPool(2);
