@@ -127,6 +127,11 @@ class BusinessTransitionLedgerPostgresTest {
         assertEquals("Rollback to known configuration",rows.get(6).reason());
         assertEquals("Unsafe for deployment",rows.get(7).reason());
         ledgerVerifier.verifySite(f.site());
+        // Simulate a privileged DB tamper in the test schema, without the
+        // production append-only trigger. Verification must fail closed.
+        jdbc.update("update business_transition set actor_id=? where site_id=? and sequence_no=3",
+                "forged-actor",f.site());
+        assertThrows(IllegalStateException.class,()->ledgerVerifier.verifySite(f.site()));
     }
 
     @Test void journalInsertFailureRollsBackApprovalAtomically() {
