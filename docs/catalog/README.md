@@ -1,6 +1,6 @@
 # Smart Equipment Library — первый функциональный срез R0
 
-**Статус:** Draft / экспериментальная доменная библиотека на Java 21. Требования и ревью: [R0 master specification](../requirements/R0-master-spec.md).
+**Статус:** Draft / экспериментальная доменная библиотека на Java 21. Требования и ревью: [R0 master specification](../ZAVOD-MASTER-SPEC.md).
 
 ## Что реализовано
 
