@@ -3,6 +3,7 @@ import {ReactFlow,Background,Controls,Handle,MiniMap,Position,ReactFlowProvider,
   type NodeProps,type Node, type Edge} from '@xyflow/react';
 import {studioApi,ApiFailure} from './api';
 import {EquipmentSymbol} from './Symbols';
+import {EquipmentEditor} from './EquipmentEditor';
 import {createGraph,CURRENT_TELEMETRY,LENSES,LENS_LABELS,LAYOUT_LABELS,ROLE_LABELS,
   variantId,type Blueprint,type CatalogEntry,type Diagnostic,type LayoutMode,type Lens,
   type Role,type ProcessUnit,type Equipment,type XRayView} from './model';
@@ -50,6 +51,7 @@ function WorkspaceInner(){
   const [catalog,setCatalog]=useState<CatalogEntry[]>([]);
   const [selectedUnit,setSelectedUnit]=useState('');
   const [selectedEquipment,setSelectedEquipment]=useState('');
+  const [editingUnit,setEditingUnit]=useState('');
   const [xray,setXray]=useState<XRayView|null>(null);
   const [diagnostics,setDiagnostics]=useState<Diagnostic[]>([]);
   const [pending,setPending]=useState(false);
@@ -83,11 +85,24 @@ function WorkspaceInner(){
       setNotice({type:'error',message});
     } finally {setPending(false);}
   };
+  useEffect(()=>{
+    const saved=window.localStorage.getItem('zavod.studio.local-project');
+    if(!saved)return;
+    let selection:{site:string;blueprintId:string};
+    try {selection=JSON.parse(saved);} catch {window.localStorage.removeItem('zavod.studio.local-project');return;}
+    if(!selection.site||!selection.blueprintId)return;
+    let active=true;
+    Promise.all([studioApi.load(selection.site,selection.blueprintId),studioApi.catalog(selection.site)])
+      .then(([bp,items])=>{if(!active)return;setSite(selection.site);setCatalog(items);applySnapshot(bp,true);})
+      .catch(()=>{if(active)setNotice({type:'error',message:'Не удалось восстановить локальный проект. Данные не удалены.'});});
+    return ()=>{active=false;};
+  },[applySnapshot]);
   const bootstrap=()=>void execute(async()=>{
     const newSite=await studioApi.newSite();
     const bp=await studioApi.newBlueprint(newSite.siteId);
     const entries=await studioApi.catalog(newSite.siteId);
     setSite(newSite.siteId);setCatalog(entries);applySnapshot(bp,true);
+    window.localStorage.setItem('zavod.studio.local-project',JSON.stringify({site:newSite.siteId,blueprintId:bp.id}));
     setNotice({type:'success',message:'Локальная площадка создана. Конфигурация не активирует оборудование.'});
   });
   const loadKnown=()=>void execute(async()=>{
@@ -131,6 +146,10 @@ function WorkspaceInner(){
         xray.sharedResourcePeers.includes(n.id)?'resource-node':'muted-node':''
     })),edges}),[nodes,edges,xray,lens]);
   const openUnit=(id:string)=>{setSelectedUnit(id);setSelectedEquipment('');};
+  const enterEditor=()=>{
+    if(!blueprint?.units.some(u=>u.id===selectedUnit)||dirty||readOnly)return;
+    setEditingUnit(selectedUnit);
+  };
   const changeRole=(r:Role)=>{
     setRole(r);setLayout(defaults[r].layout);setLens(defaults[r].lens);
   };
@@ -167,6 +186,10 @@ function WorkspaceInner(){
     </div>
     {notice&&<div className={'notice '+notice.type} role={notice.type==='error'?'alert':'status'}>{notice.message}
       <button onClick={()=>setNotice(null)} aria-label="Закрыть сообщение">×</button></div>}
+    {editingUnit&&blueprint&&site?<EquipmentEditor site={site} blueprint={blueprint}
+      unitId={editingUnit} catalog={catalog}
+      onCommitted={saved=>{applySnapshot(saved,true);}}
+      onBack={()=>{setEditingUnit('');}}/>:
     <main className="workspace">
       {layout!=='FOCUS'&&<aside className="palette pane">
         <div className="pane-label">ОБЪЕКТЫ И ЛИНИИ</div>
@@ -177,14 +200,16 @@ function WorkspaceInner(){
         {role==='ENGINEER'&&<><div className="section-title">Библиотека оборудования</div>
           <div className="equipment-list">{catalog.slice(0,11).map(item=><div className="equipment-item" key={item.key}>
             <EquipmentSymbol kind={item.key} size={26}/><span>{item.label}</span></div>)}</div>
-          <p className="muted tiny">В этом срезе каталог доступен для просмотра. Drag & drop оборудования и редактор портов — следующий этап RS-1.</p></>}
+          <p className="muted tiny">Выберите линию и нажмите «Редактировать линию» для настройки типизированных портов, перемещения и Undo/Redo.</p></>}
         {role==='OPERATOR'&&<p className="muted">Операторский вид — только обзор. Нет подключённых PLC или фактических сигналов.</p>}
       </aside>}
       <section className="canvas-pane">
         <div className="canvas-header"><div className="canvas-heading">
           <span className="eyebrow">{LENS_LABELS[lens].toUpperCase()}</span>
           <strong>Схема производства</strong>
-        </div><div className="canvas-badges"><span className="status-unknown">◌ TELEMETRY UNKNOWN</span><span className="status-provenance">ENGINEERING ONLY</span></div></div>
+        </div><div className="canvas-badges">
+          {role==='ENGINEER'&&<button className="soft" disabled={!blueprint?.units.length||dirty}
+            onClick={enterEditor}>Редактировать линию ↗</button>}<span className="status-unknown">◌ TELEMETRY UNKNOWN</span><span className="status-provenance">ENGINEERING ONLY</span></div></div>
         {layout==='OVERVIEW'&&<div className="overview-strip">
           <div><strong>{blueprint?.units.length??0}</strong><small>Линии</small></div>
           <div><strong>{blueprint?.sharedAssets.length??0}</strong><small>Общие ресурсы</small></div>
@@ -231,7 +256,7 @@ function WorkspaceInner(){
         <div className="empty-trend"><div className="trend-grid"/><strong>Нет подтверждённых измерений</strong>
           <small>Температура, давление и тренды появятся только после квалифицированной привязки источника. Данные не симулируются молча.</small></div>
       </aside>}
-    </main>
+    </main>}
     <footer className="bottom-dock">
       <div className="dock-title"><span className="guardian-icon">✧</span><strong>Engineering Guardian</strong>
         <span className="muted">{diagnostics.length?'Найдено '+diagnostics.length:'Запустите серверную проверку'}</span></div>
