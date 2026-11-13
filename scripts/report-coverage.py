@@ -30,6 +30,15 @@ targets = [
     "kz/zavod/studio/StudioBlueprintService",
     "kz/zavod/studio/StudioLayoutService",
     "kz/zavod/engineering/EngineeringUnits",
+    # G4/TF03 resilience, audit trust boundary and industrial-safety-adjacent code:
+    "kz/zavod/blueprint/lifecycle/ActivationCommandService",
+    "kz/zavod/blueprint/lifecycle/BusinessTransitionLedger",
+    "kz/zavod/blueprint/lifecycle/BusinessLedgerAuditService",
+    "kz/zavod/blueprint/lifecycle/SiteSecurityConfiguration",
+    "kz/zavod/telemetry/TelemetryQualityEvaluator",
+    "kz/zavod/telemetry/TelemetryIngestionService",
+    "kz/zavod/telemetry/SignalRegistryService",
+    "kz/zavod/studio/PlantDemoDevController",
 ]
 found=set()
 for pkg in root.findall("package"):
