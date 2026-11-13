@@ -203,9 +203,9 @@ class ActivationCommandPostgresTest {
      */
     @Test void terminateRealPostgresBackendWhileCommitRunsThenRetryExactlyOnce() throws Exception {
         var f=published();
-        jdbc.execute("create or replace function g42_suspend_commit() returns trigger as $ "+
+        jdbc.execute("create or replace function g42_suspend_commit() returns trigger as $g42$ "+
                 "begin perform set_config('application_name','zavod-g42-commit-inflight',true); "+
-                "perform pg_sleep(12); return NEW; end; $ language plpgsql");
+                "perform pg_sleep(12); return NEW; end; $g42$ language plpgsql");
         jdbc.execute("create constraint trigger g42_suspend_activation "+
                 "after insert on activation_command deferrable initially deferred "+
                 "for each row execute function g42_suspend_commit()");
