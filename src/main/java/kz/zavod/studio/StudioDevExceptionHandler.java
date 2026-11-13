@@ -14,9 +14,14 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 @Profile("dev-local")
 public class StudioDevExceptionHandler {
     public record ApiError(String code,String message) {}
-    @ExceptionHandler({StudioConflictException.class,BlueprintRevisionConflict.class,TelemetryIngestionConflict.class})
+    @ExceptionHandler({StudioConflictException.class,BlueprintRevisionConflict.class})
     ResponseEntity<ApiError> conflict(IllegalStateException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError("REVISION_CONFLICT",ex.getMessage()));
+    }
+    @ExceptionHandler(TelemetryIngestionConflict.class)
+    ResponseEntity<ApiError> telemetryConflict(TelemetryIngestionConflict ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiError("TELEMETRY_EVENT_CONFLICT",ex.getMessage()));
     }
     @ExceptionHandler(StudioNotFoundException.class)
     ResponseEntity<ApiError> missing(StudioNotFoundException ex) {
