@@ -114,9 +114,12 @@ public class TelemetryIngestionService {
         var samples=jdbc.query(
                 "select signal_id,source_event_id,source_kind,sample_value,unit_code,"+
                 "source_time,received_at,quality from telemetry_sample "+
-                "where signal_id=? and source_time<=? "+
+        // The evaluator, not SQL, decides whether future-dated observations
+        // are trustworthy. Filtering them out would resurrect an older GOOD
+        // sample and falsely report CURRENT while a newer event is UNTRUSTED.
+                "where signal_id=? "+
                 "order by source_time desc,received_at desc,source_event_id desc limit 1",
-                (rs,n)->sample(rs),signalId.toString(),utc(now));
+                (rs,n)->sample(rs),signalId.toString());
         return TelemetryQualityEvaluator.evaluate(definition,
                 samples.isEmpty()?null:samples.get(0),now);
     }
