@@ -298,6 +298,39 @@ class ActivationCommandPostgresTest {
         assertEquals(1,receipts.countBySiteId(f.site()));
     }
 
+    @Test void actorBoundReceiptRejectsAdminImpersonationAndBadRequestKeys() {
+        var fixture=published();
+        var established=commands.activate(fixture.site(),"actor-bound",fixture.blueprint(),1,null);
+        assertFalse(established.replayed());
+        members.saveAndFlush(new SiteMemberEntity(UUID.randomUUID().toString(),
+                fixture.site(),"other-admin",SiteMemberEntity.Role.ADMIN));
+        actor("other-admin");
+        assertThrows(SecurityException.class,
+                ()->commands.observe(fixture.site(),"actor-bound"));
+        assertThrows(SecurityException.class,
+                ()->commands.reconcile(fixture.site(),"actor-bound"));
+        var conflict=assertThrows(BlueprintLifecycleException.class,
+                ()->commands.activate(fixture.site(),"actor-bound",fixture.blueprint(),1,null));
+        assertEquals("IDEMPOTENCY_KEY_CONFLICT",conflict.getMessage());
+        actor("activator");
+        assertThrows(IllegalArgumentException.class,
+                ()->commands.activate(fixture.site(),"",fixture.blueprint(),1,null));
+        assertThrows(IllegalArgumentException.class,
+                ()->commands.activate(fixture.site(),"a".repeat(129),fixture.blueprint(),1,null));
+        assertThrows(IllegalArgumentException.class,
+                ()->commands.observe(fixture.site(),null));
+        assertThrows(IllegalArgumentException.class,
+                ()->commands.reconcile(fixture.site()," "));
+        assertThrows(IllegalArgumentException.class,
+                ()->commands.activate(fixture.site(),"negative-rev",fixture.blueprint(),0,null));
+        assertThrows(NullPointerException.class,
+                ()->commands.activate(fixture.site(),"null-blueprint",null,1,null));
+        assertEquals(1,receipts.countBySiteId(fixture.site()));
+        assertEquals(1,transitions.countBySiteId(fixture.site()));
+        assertEquals(established.activationSetId(),
+                sites.findById(fixture.site()).orElseThrow().activeSetId());
+    }
+
     @Test void nonCommittedOrUnauthorizedCommandNeverClaimsSuccess(){
         var f=published();
         assertEquals(ActivationCommandService.OutcomeState.NOT_OBSERVED_RETRY,
