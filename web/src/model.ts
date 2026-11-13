@@ -46,8 +46,12 @@ export interface Diagnostic {code:string;severity:string;entity:string;detail:st
 export interface EngineeringPropertyDefinition {
   key?:string; dimension?:string; canonicalUnit?:string
 }
+export interface CatalogPort {
+  key:string;direction:'IN'|'OUT';medium:string;streamKind:string;
+  minConnections:number;maxConnections:number;
+}
 export interface CatalogEntry {
-  key:string;version:number;label:string;ports:Port[];properties:EngineeringPropertyDefinition[];
+  key:string;version:number;label:string;ports:CatalogPort[];properties:EngineeringPropertyDefinition[];
 }
 export type TelemetryQuality = 'UNKNOWN_NO_TELEMETRY'|'SIMULATED'|'STALE'|'OFFLINE'|'GOOD'|'BAD';
 // The only shipped state is UNKNOWN_NO_TELEMETRY. No demo status may be
