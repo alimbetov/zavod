@@ -48,8 +48,11 @@ public final class BlueprintValidator {
                 if(count<p.min())errors.add(err("MISSING_REQUIRED_PORT",u.id()+"/"+e.id()+"/"+p.key()));
                 if(count>p.max())errors.add(err("PORT_CAPACITY",u.id()+"/"+e.id()+"/"+p.key()));
             }
-            if(cyclic(nodes.keySet(),edges)&&!u.recirculationAllowed())errors.add(err("MATERIAL_CYCLE",u.id()));
+            boolean cyclicMaterial=cyclic(nodes.keySet(),edges);
+            if(cyclicMaterial&&!u.recirculationAllowed())errors.add(err("MATERIAL_CYCLE",u.id()));
             if(u.recirculationAllowed()&&u.kind()!=UnitKind.CIRCUIT)errors.add(err("RECIRCULATION_NEEDS_CIRCUIT",u.id()));
+            if(cyclicMaterial&&u.recirculationAllowed()&&u.kind()==UnitKind.CIRCUIT)
+                errors.add(new Finding("RECIRCULATION_UNQUALIFIED",Severity.WARNING,u.id()));
             Set<String> boundaryKeys=new HashSet<>();
             for(Boundary boundary:u.boundaries()) {
                 if(!boundaryKeys.add(boundary.key()))errors.add(err("DUPLICATE_BOUNDARY",u.id()+"/"+boundary.key()));
