@@ -134,6 +134,13 @@ public class StudioDevController {
                 latest.maxActiveLines(),unitPrefix,catalog);
     }
 
+    /** Only structural graph relations from an already persisted site-owned revision. */
+    @GetMapping("/sites/{siteId}/blueprints/{blueprintId}/x-ray")
+    public EngineeringXRay.View xRay(@PathVariable String siteId,@PathVariable UUID blueprintId,
+                                    @RequestParam String unitId) {
+        return EngineeringXRay.inspect(blueprints.load(siteId,blueprintId),unitId);
+    }
+
     /** Structural constraints only: never claims physical process certification. */
     @GetMapping("/sites/{siteId}/blueprints/{blueprintId}/golden")
     public EngineeringGoldenModel.Report golden(@PathVariable String siteId,@PathVariable UUID blueprintId) {
