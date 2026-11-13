@@ -44,8 +44,10 @@ public class ActivationCommandService {
         // All idempotency decisions for this Site are serialized by the row lock.
         // The lock is held until COMMIT along with the business mutation and audit.
         sites.lockSite(siteId).orElseThrow(()->new BlueprintLifecycleException("UNKNOWN_SITE"));
-        String payloadHash=hash(blueprintId+":"+revision+":"+
-                (expectedPreviousSetId==null?"<none>":expectedPreviousSetId));
+        // Explicit null/value encoding avoids replay collisions such as null vs "<none>".
+        String previousToken=expectedPreviousSetId==null?"N":
+                "V"+expectedPreviousSetId.length()+":"+expectedPreviousSetId;
+        String payloadHash=hash("ACTIVATE|"+blueprintId+"|"+revision+"|"+previousToken);
         var prior=commands.findBySiteIdAndCommandKey(siteId,commandKey);
         if(prior.isPresent()) {
             var existing=prior.orElseThrow();
