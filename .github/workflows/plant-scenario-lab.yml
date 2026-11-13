@@ -1,0 +1,26 @@
+name: plant-scenario-lab
+
+on:
+  push:
+    branches:
+      - feat/r0-4-plant-99-scenario-lab
+  pull_request:
+    paths:
+      - 'src/main/java/kz/zavod/lab/**'
+      - 'src/test/java/kz/zavod/lab/**'
+      - 'scripts/test-plant-scenario-lab.sh'
+      - '.github/workflows/plant-scenario-lab.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Validate synthetic 1-99 production lines
+        run: bash scripts/test-plant-scenario-lab.sh
