@@ -105,7 +105,7 @@ class BlueprintLifecyclePostgresTest {
         assertEquals(10,new com.fasterxml.jackson.databind.ObjectMapper()
                 .convertValue(readJson(active.selectedUnitsJson()),List.class).size());
         assertEquals(f.snapshot(),drafts.loadRevision(f.blueprintId(),1));
-        assertEquals(1,activationSets.count());
+        assertEquals(1,activationSets.countBySiteId(f.siteId()));
     }
 
     private static List<?> readJson(String input){
@@ -156,7 +156,7 @@ class BlueprintLifecyclePostgresTest {
         actor("activator");
         String first=lifecycle.activate(f.siteId(),f.blueprintId(),1,null);
         assertEquals(first,lifecycle.active(f.siteId()).id());
-        assertEquals(1,activationSets.count());
+        assertEquals(1,activationSets.countBySiteId(f.siteId()));
     }
 
     @Test void twoActivatorsWithSamePreviousPointerCannotBothActivate() throws Exception {
@@ -182,7 +182,7 @@ class BlueprintLifecyclePostgresTest {
             for(Future<String> fut:runs)outcomes.add(fut.get(40,TimeUnit.SECONDS));
             assertEquals(1,Collections.frequency(outcomes,"OK"),outcomes.toString());
             assertEquals(1,Collections.frequency(outcomes,"STALE_ACTIVATION_SET"),outcomes.toString());
-            assertEquals(1,activationSets.count());
+            assertEquals(1,activationSets.countBySiteId(f.siteId()));
             actor("viewer");
             assertNotNull(lifecycle.active(f.siteId()).id());
         } finally {pool.shutdownNow();}
