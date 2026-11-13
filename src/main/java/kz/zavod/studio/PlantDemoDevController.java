@@ -144,7 +144,7 @@ public class PlantDemoDevController {
         var state=status(siteId,blueprintId,revision);
         if(!state.active())throw new IllegalArgumentException("DEMO_REQUIRES_ACTIVE_ENGINEERING_CONFIGURATION");
         String scenario=request.scenario();
-        if(!Set.of("NORMAL","ALARM").contains(scenario))
+        if(scenario==null||!Set.of("NORMAL","ALARM").contains(scenario))
             throw new IllegalArgumentException("INVALID_DEMO_SCENARIO");
         var binding=demoSignal(siteId,blueprintId,revision);
         BigDecimal value="ALARM".equals(scenario)?new BigDecimal("6.2"):new BigDecimal("2.5");
