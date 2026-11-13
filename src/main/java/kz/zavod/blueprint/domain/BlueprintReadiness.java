@@ -17,6 +17,11 @@ public final class BlueprintReadiness {
                 .map(f->new Finding(f.code(),f.unitId()+"/"+f.equipmentId())).toList();
         var findings=new java.util.ArrayList<Finding>(topology);
         findings.addAll(library);
+        for(ResourcePolicyValidator.Conflict conflict:ResourcePolicyValidator.inspect(blueprint)) {
+            findings.add(new Finding(conflict.code(),conflict.assetId()
+                    +" demand="+conflict.totalDemand()+"/"+conflict.capacity()
+                    +" users="+new java.util.TreeSet<>(conflict.consumers())));
+        }
         return List.copyOf(findings);
     }
 }

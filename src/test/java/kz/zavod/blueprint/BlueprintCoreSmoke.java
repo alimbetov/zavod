@@ -28,7 +28,8 @@ public final class BlueprintCoreSmoke {
         ok(!BlueprintImpactAnalyzer.analyze(plant,Set.of("L001")).contention().isEmpty(),"resource contention visible");
         ok(BlueprintCatalogAudit.inspect(plant,EquipmentCatalog.standard()).stream().anyMatch(f->f.code().equals("UNKNOWN_EQUIPMENT_TEMPLATE")),"unrecognized lab nodes explicitly reported");
         var restricted=new ProcessBlueprint(plant.id(),plant.revision(),10,plant.units(),plant.sharedAssets(),plant.transfers(),plant.dependencies());
-        error(restricted,"LINE_POLICY_EXCEEDED");
+        ok(BlueprintValidator.validate(restricted).stream().noneMatch(f->f.code().equals("LINE_POLICY_EXCEEDED")),
+                "DRAFT with 99 lines is allowed regardless of active-line quota");
         var units=new ArrayList<>(plant.units());var u=units.get(0);
         units.set(0,new ProcessUnit(u.id(),UnitKind.CIRCUIT,"hydroponics.nft.v1",u.equipment(),u.connections(),u.boundaries(),u.resources(),u.measurements(),false));
         var modified=new ProcessBlueprint(plant.id(),2,99,units,plant.sharedAssets(),plant.transfers(),plant.dependencies());

@@ -12,8 +12,8 @@ public final class BlueprintValidator {
     public static List<Finding> validate(ProcessBlueprint b) {
         List<Finding> errors = new ArrayList<>();
         if(b.units().isEmpty())errors.add(err("EMPTY_BLUEPRINT",b.id().toString()));
-        if(b.units().stream().filter(u->u.kind()==UnitKind.LINE).count()>b.maxActiveLines())
-            errors.add(err("LINE_POLICY_EXCEEDED",b.id().toString()));
+        // Number of DRAFT lines is unrestricted by activation policy.
+        // Only the server-side activation service counts actually ACTIVE LINE instances.
         Map<String,ProcessUnit> units=new HashMap<>();
         Map<String,SharedAsset> assets=new HashMap<>();
         for(SharedAsset a:b.sharedAssets()) {
@@ -44,17 +44,13 @@ public final class BlueprintValidator {
                 if(!pairs.add(source.id()+"/"+sp.key()+">"+target.id()+"/"+tp.key()))errors.add(err("DUPLICATE_CONNECTION",u.id()));
                 edges.add(Map.entry(source.id(),target.id()));
             }
-            for(Equipment e:u.equipment())for(Port p:e.ports()) {
-                int count=links.getOrDefault(e.id()+"/"+p.key(),0);
-                if(count<p.min())errors.add(err("MISSING_REQUIRED_PORT",u.id()+"/"+e.id()+"/"+p.key()));
-                if(count>p.max())errors.add(err("PORT_CAPACITY",u.id()+"/"+e.id()+"/"+p.key()));
-            }
             boolean cyclicMaterial=cyclic(nodes.keySet(),edges);
             if(cyclicMaterial&&!u.recirculationAllowed())errors.add(err("MATERIAL_CYCLE",u.id()));
             if(u.recirculationAllowed()&&u.kind()!=UnitKind.CIRCUIT)errors.add(err("RECIRCULATION_NEEDS_CIRCUIT",u.id()));
             if(cyclicMaterial&&u.recirculationAllowed()&&u.kind()==UnitKind.CIRCUIT)
                 errors.add(new Finding("RECIRCULATION_UNQUALIFIED",Severity.WARNING,u.id()));
             Set<String> boundaryKeys=new HashSet<>();
+            Set<String> boundPhysicalPorts=new HashSet<>();
             for(Boundary boundary:u.boundaries()) {
                 if(!boundaryKeys.add(boundary.key()))errors.add(err("DUPLICATE_BOUNDARY",u.id()+"/"+boundary.key()));
                 if(boundary.equipmentId()==null||boundary.physicalPortKey()==null) {
@@ -64,9 +60,22 @@ public final class BlueprintValidator {
                     Port port=equipment==null?null:port(equipment,boundary.physicalPortKey());
                     if(port==null||port.direction()!=boundary.direction()||port.kind()!=boundary.kind()||!port.medium().equals(boundary.medium()))
                         errors.add(err("INVALID_BOUNDARY_BINDING",u.id()+"/"+boundary.key()));
+                    else {
+                        String boundKey=equipment.id()+"/"+port.key();
+                        if(!boundPhysicalPorts.add(boundKey))
+                            errors.add(err("BOUNDARY_PORT_ALREADY_BOUND",u.id()+"/"+boundary.key()));
+                        links.merge(boundKey,1,Integer::sum);
+                    }
                 }
             }
+            for(Equipment e:u.equipment())for(Port p:e.ports()) {
+                int count=links.getOrDefault(e.id()+"/"+p.key(),0);
+                if(count<p.min())errors.add(err("MISSING_REQUIRED_PORT",u.id()+"/"+e.id()+"/"+p.key()));
+                if(count>p.max())errors.add(err("PORT_CAPACITY",u.id()+"/"+e.id()+"/"+p.key()));
+            }
+            Set<String> resourceIds=new HashSet<>();
             for(ResourceUse r:u.resources()) {
+                if(!resourceIds.add(r.sharedAssetId()))errors.add(err("DUPLICATE_RESOURCE_USE",u.id()+"/"+r.sharedAssetId()));
                 SharedAsset asset=assets.get(r.sharedAssetId());
                 if(asset==null)errors.add(err("UNKNOWN_RESOURCE",u.id()+"/"+r.sharedAssetId()));
                 else if(r.demand()<1||r.demand()>asset.capacity())errors.add(err("RESOURCE_CAPACITY",u.id()+"/"+r.sharedAssetId()));

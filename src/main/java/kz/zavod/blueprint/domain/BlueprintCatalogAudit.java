@@ -13,10 +13,11 @@ public final class BlueprintCatalogAudit {
     public static List<Finding> inspect(ProcessBlueprint b, EquipmentCatalog catalog) {
         List<Finding> findings = new ArrayList<>();
         for(ProcessUnit u:b.units())for(Equipment e:u.equipment()) {
-            EquipmentType type=catalog.types().get(e.typeKey());
-            if(type==null){findings.add(new Finding("UNKNOWN_EQUIPMENT_TEMPLATE",u.id(),e.id(),e.typeKey()));continue;}
-            if(type.version()!=e.templateVersion()){
-                findings.add(new Finding("TEMPLATE_VERSION_MISMATCH",u.id(),e.id(),e.typeKey()));continue;
+            EquipmentType type=catalog.versions().get(new EquipmentCatalog.TemplateId(e.typeKey(),e.templateVersion()));
+            if(type==null) {
+                String code=catalog.types().containsKey(e.typeKey())?"TEMPLATE_VERSION_MISMATCH":"UNKNOWN_EQUIPMENT_TEMPLATE";
+                findings.add(new Finding(code,u.id(),e.id(),e.typeKey()+"/"+e.templateVersion()));
+                continue;
             }
             Map<String,EquipmentType.Port> templatePorts=new HashMap<>();
             for(EquipmentType.Port p:type.ports())templatePorts.put(p.key(),p);
@@ -27,6 +28,7 @@ public final class BlueprintCatalogAudit {
                 if(required==null) {
                     findings.add(new Finding("UNRECOGNIZED_CATALOG_PORT",u.id(),e.id(),p.key()));
                 } else if(!required.direction().name().equals(p.direction().name())
+                        || !required.streamKind().name().equals(p.kind().name())
                         || !required.medium().equals(p.medium())
                         || required.minConnections()!=p.min() || required.maxConnections()!=p.max()) {
                     findings.add(new Finding("TEMPLATE_PORT_SCHEMA_MISMATCH",u.id(),e.id(),p.key()));
