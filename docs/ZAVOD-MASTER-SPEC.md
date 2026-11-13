@@ -2181,3 +2181,51 @@ The following RED cases are **APPROVED TO AUTHOR** because their input, oracle, 
 **Compatibility note:** `int` → `long` in derived diagnostic record accessors is a Java source/binary API change for consumers; audit all usages before an external API is published. Snapshot records remain unchanged. A potential `long` overflow is checked and must become typed input validation in future API boundary; this is not a substitute for site resource quantity semantics.
 
 **Next slice (NOT DONE):** RED-INT-07 old/new shared-resource membership and precise reason trace; RED-INT-05 type-specific cycle semantics after DEC-INT-11; richer unit/port diagnostics; INT-0 asset/measurement contracts and site-owned API after R0.6 security boundary. Preserve HOLD for these requirements.
+
+
+### 25.12 Матрица ранее упущенных возможностей — обязательное покрытие (P0/P1)
+
+**Статус:** дополнение к действующему единому ТЗ, 13.11.2026. Эта матрица **не создаёт конкурирующих требований**: закрепляет все девять пробелов из продуктово-технического ревью, связывает их с уже существующими разделами и добавляет проверяемые сценарии `SC-GAP-001…009`. Текущая Java/JPA-основа и PASS существующего CI **не доказывают** реализацию этих девяти end-to-end возможностей.
+
+Три категории:
+- **A — работоспособность продукта и удобство инженера:** Blueprint Studio, Process Packs, локальная/offline эксплуатация.
+- **B — инженерная достоверность:** единицы измерений, реальные инженерные шаблоны, параметры и ограничения, digital commissioning.
+- **C — готовность к наблюдению за реальным объектом:** historian и измерения с quality/timestamps, квалифицированный физический read-only стенд.
+
+| ID | Категория | Приоритет | Упущенная возможность | Нормативный контракт / ссылки | Релиз и приёмка |
+|---|---|---|---|---|---|
+| **GAP-001** | A | **P0** | **Полноценный Blueprint Studio** | `22 / STUDIO-001…011, `25 / KF-FR-001,003…008: React Flow Palette/Canvas/Inspector, typed connections, server validation, Save/Reopen и независимый layout | **R0.6A/B**, SC-GAP-001 |
+| **GAP-002** | B | **P0** | **Единая система физических величин** | `23 / EngineeringQuantity, PhysicalDimension, UnitConversion; KF-FR-002; не путать volumetric/mass flow и температуру | **R0.6A**, SC-GAP-002 |
+| **GAP-003** | B | **P0** | **Реальные инженерные шаблоны** | `23 / инженерные доказательства + `25.6 / PUMP-DOSING-001, HYDRO-NFT-001. Как минимум **одна инженером проверенная pump/dosing golden fixture** в MVP; отраслевой Pack Marketplace не обязателен до R0.8 | **R0.6B**, SC-GAP-003 |
+| **GAP-004** | B | **P0** | **Конфигурация физических параметров и ограничений** | `23 / PropertyDefinition, OperatingEnvelope, sourceEvidence; Inspector показывает пределы, единицы, значение и происхождение, валидатор проверяет ranges | **R0.6A/B**, SC-GAP-004 |
+| **GAP-005** | B/C | **P1** | **Digital Commissioning** | `19 / validation, `21 / Approval/Activation, `22 / boundaries и `25.4 / SignalManifest. Этапы mapping→dry-run→review→site-specific FAT/SAT; **программный preflight ≠ допуск к эксплуатации** | **R0.8→R1**, SC-GAP-005 |
+| **GAP-006** | C | **P1** | **История телеметрии (Historian)** | `20 / INT-001, `22.9 / Observation, `25.5 / Smart Focus: sourceTimestamp/receivedAt, quality, unit, site/asset mapping, retention, gaps и replay | **R1** (виртуальная история для R0.7), SC-GAP-006 |
+| **GAP-007** | A | **P1** | **Отраслевые Process Packs** | `25.6 / KF-E: immutable packId/version, pinned equipment/process versions, собственные instance IDs при создании; гидропоника DRAFT до квалификации | **R0.8**, SC-GAP-007 |
+| **GAP-008** | A/C | **P1** | **Работа без интернета / локальное развёртывание** | `25.3 / `25.10 / KF-FR-017: локальные Backend/Frontend/PostgreSQL и virtual HMI; не зависеть от внешнего SaaS при штатном запуске; offline ≠ отключение прав доступа | **R0.8 для virtual, R1 для Edge**, SC-GAP-008 |
+| **GAP-009** | C | **P1** | **Испытания на реальном стенде** | `9 / OT safety, `25.10 / R1: **один** документированный read-only датчик/контроллер, квалифицированное соответствие сигналов, disconnect/reconnect, stale/quality, запрет записей | **R1 OT pilot**, SC-GAP-009 |
+
+**Уточнение приоритетов:** в раннем `25.6 два минимальных шаблона обозначены как будущие отраслевые Packs; это **не отменяет P0** на одну реальную квалифицированную инженерную fixture для проверки рабочего Blueprint Studio. P0 подтверждает корректность оборудования на ограниченном испытательном примере; P1 расширяет его до переиспользуемых версионированных Packs и импорта. Аналогично виртуальная история сигналов R0.7 не считается проверенным промышленным historian.
+
+### 25.13 Девять независимых acceptance gates для закрытия упущений
+
+**Все SC-GAP-001…009 имеют статус RED/PLANNED до появления исполняемых E2E/интеграционных тестов.** Запуск прежних тестов Java Catalog и 99 synthetic ProcessUnits не переводит эти сценарии в GREEN.
+
+| ID | Сценарий | Строгий критерий PASS и доказательство |
+|---|---|---|
+| **SC-GAP-001** | В браузере собрать резервуар→насос→клапан, проверить ports, сохранить Draft и ViewLayout, закрыть вкладку и открыть | Один authoritative Java Blueprint, физические stable IDs/edges/ports и x/y/zoom восстановлены из PostgreSQL; Playwright против реального backend, 409 conflict проверен |
+| **SC-GAP-002** | Передать насосные паспортные параметры с расходом m³/h и L/min, давлением bar/Pa, температурой °C/K и массой kg | Эквивалентные величины приводятся к одной dimension; несовместимые единицы и °C без учёта offset отклоняются/корректно преобразуются; numeric accuracy и rounding задаются oracle |
+| **SC-GAP-003** | Загрузить versioned golden pump/dosing fixture с источниками характеристик и физическими портами | Независимый инженерный review типовых компонентов/диапазонов, верные medium/FlowKind/cardinality; полный server validation; непроверенная номинальная производительность не выдаётся как фактическая |
+| **SC-GAP-004** | Изменить nominal capacity/operating envelope за допустимым диапазоном; перезагрузить проект | Typed error с equipmentId/propertyKey/source, неподтверждённое значение не применяется к APPROVED snapshot; Save/Reopen Draft сохраняет корректно помеченные assumptions |
+| **SC-GAP-005** | Digital Commissioning preflight для 1 process unit: проверить pin→signal binding, единицы, версии шаблонов, missing/duplicate mapping, site restrictions | Экспорт проверочного checklist + явный PASS/BLOCKED для каждого сигнала; site sign-off/FAT/SAT обозначен отдельно; при неподтверждённом mapping физическая активация/управление не разрешены |
+| **SC-GAP-006** | Записать/воспроизвести GOOD/BAD/STALE telemetry с UTC timestamps, quality и signal provenance; смоделировать разрыв | Временной порядок и replay детерминированны, stale не классифицируется как здоровый pump, дубликаты/пропуски и retention проверены, ни один «виртуальный» сигнал не маркируется как реальный |
+| **SC-GAP-007** | Дважды создать проекты из одного Process Pack, обновить Pack v1→v2 | Разные equipment instance IDs при неизменных pinned template versions старых проектов; upgrade только по preview/diff/engineer decision; HYDRO-NFT-001 нельзя публиковать без recirculation qualification |
+| **SC-GAP-008** | Отключить доступ к Интернету на локальном стенде после установки и перезапустить все компоненты | UI, Backend, PostgreSQL, сохранение/чтение Blueprint и SIMULATED preview работают без внешнего DNS/SaaS/identity endpoint; логирование, backup/restore и сохранение локальных прав проверены |
+| **SC-GAP-009** | Подключить один read-only тестовый датчик/PLC через отдельный OT стенд; повторить loss-of-connection/reconnect | Source+quality+timestamps и точный Equipment/SignalBinding подтверждены, реестр сетевых операций не содержит write; отдельный site OT risk assessment/FAT/SAT до любых эксплуатационных обещаний |
+
+### 25.14 Контроль полноты и порядок исполнения без распыления
+
+**Первый MVP Gate = GAP-001…004 (P0) + существующие SC-STUDIO/KF P0.** Команда создаёт и сохраняет корректную схему с настоящими типизированными инженерными параметрами. **Следующий Virtual Monitoring Gate** = Virtual HMI + Smart Focus на синтетических данных, с независимыми тревогами и без PLC. **Pilot Gate P1** = GAP-005…009: проверенные Packs, Digital Commissioning, локальное развёртывание, historian и один read-only физический стенд. Разные gates нельзя подменять одним зелёным CI.
+
+**Evidence chain:** `GAP-ID → SC-GAP-ID → код/тест → pinned fixture/version → точный commit SHA → CI run → reviewer/qualification notes`. Для GAP-003 и GAP-009 нужно также независимо проверенное инженерное/OT evidence, не только JUnit.
+
+**Основные stop conditions:** никакой PLC write, неподтверждённых physical limits, маскировки SIMULATED под MEASURED, silent unit coercion, преждевременного объявления SCADA production-ready; DEV Hibernate `ddl-auto=update` допускается только для локальной разработки, PROD `validate` плюс план миграции/backup. Не включать Liquibase/Flyway, ML-runtime и новые микросервисы без отдельного решения. **Единое мастер-ТЗ и только \`main\`.**
