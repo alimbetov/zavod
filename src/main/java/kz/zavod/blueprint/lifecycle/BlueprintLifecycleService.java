@@ -90,6 +90,7 @@ public class BlueprintLifecycleService {
         if(site.activeSetId()!=null) {
             PlantActivationSetEntity current=sets.findById(site.activeSetId())
                     .orElseThrow(()->new BlueprintLifecycleException("INVALID_ACTIVATION_POINTER"));
+            requireOwnedActivation(siteId,current);
             if(current.blueprintId().equals(blueprintId.toString())
                     &&current.revisionNo()==revision
                     &&current.selectedUnitsJson().equals(approved.selectedUnitsJson()))
@@ -126,6 +127,7 @@ public class BlueprintLifecycleService {
         if(site.activeSetId()!=null) {
             var current=sets.findById(site.activeSetId())
                     .orElseThrow(()->new BlueprintLifecycleException("INVALID_ACTIVATION_POINTER"));
+            requireOwnedActivation(siteId,current);
             if(current.blueprintId().equals(blueprintId.toString())&&current.revisionNo()==revision)
                 throw new BlueprintLifecycleException("ACTIVE_PUBLICATION_CANNOT_REVOKE");
         }
@@ -152,6 +154,7 @@ public class BlueprintLifecycleService {
         if(!siteId.equals(historical.siteId()))throw new SecurityException("SITE_ACCESS_DENIED");
         var current=sets.findById(site.activeSetId())
                 .orElseThrow(()->new BlueprintLifecycleException("INVALID_ACTIVATION_POINTER"));
+        requireOwnedActivation(siteId,current);
         if(current.blueprintId().equals(historical.blueprintId())
                 &&current.revisionNo()==historical.revisionNo()
                 &&current.selectedUnitsJson().equals(historical.selectedUnitsJson()))
@@ -189,8 +192,17 @@ public class BlueprintLifecycleService {
         SiteEntity site=sites.findById(siteId)
                 .orElseThrow(()->new BlueprintLifecycleException("UNKNOWN_SITE"));
         if(site.activeSetId()==null)throw new BlueprintLifecycleException("NOT_ACTIVATED");
-        return sets.findById(site.activeSetId())
+        PlantActivationSetEntity selected=sets.findById(site.activeSetId())
                 .orElseThrow(()->new BlueprintLifecycleException("INVALID_ACTIVATION_POINTER"));
+        requireOwnedActivation(siteId,selected);
+        return selected;
+    }
+
+    private void requireOwnedActivation(String siteId,PlantActivationSetEntity selected) {
+        if(!siteId.equals(selected.siteId()))throw new BlueprintLifecycleException("INVALID_ACTIVATION_POINTER");
+        BlueprintSiteEntity owner=assignments.findById(selected.blueprintId())
+                .orElseThrow(()->new BlueprintLifecycleException("INVALID_ACTIVATION_POINTER"));
+        if(!siteId.equals(owner.siteId()))throw new BlueprintLifecycleException("INVALID_ACTIVATION_POINTER");
     }
 
     private void verifyOwned(String siteId,UUID blueprintId){
