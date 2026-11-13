@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 
 /** Stable, non-SQL error codes for the local studio API. */
-@RestControllerAdvice(assignableTypes={StudioDevController.class,EngineeringProjectDevController.class,TelemetryMonitorDevController.class})
+@RestControllerAdvice(assignableTypes={StudioDevController.class,EngineeringProjectDevController.class,TelemetryMonitorDevController.class,PlantDemoDevController.class})
 @Profile("dev-local")
 public class StudioDevExceptionHandler {
     public record ApiError(String code,String message) {}
