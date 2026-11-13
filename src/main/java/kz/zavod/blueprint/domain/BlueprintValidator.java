@@ -12,7 +12,8 @@ public final class BlueprintValidator {
     public static List<Finding> validate(ProcessBlueprint b) {
         List<Finding> errors = new ArrayList<>();
         if(b.units().isEmpty())errors.add(err("EMPTY_BLUEPRINT",b.id().toString()));
-        if(b.units().size()>b.maxActiveUnits())errors.add(err("UNIT_POLICY_EXCEEDED",b.id().toString()));
+        if(b.units().stream().filter(u->u.kind()==UnitKind.LINE).count()>b.maxActiveLines())
+            errors.add(err("LINE_POLICY_EXCEEDED",b.id().toString()));
         Map<String,ProcessUnit> units=new HashMap<>();
         Map<String,SharedAsset> assets=new HashMap<>();
         for(SharedAsset a:b.sharedAssets()) {
