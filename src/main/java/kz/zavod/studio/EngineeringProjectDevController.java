@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/sites/{siteId}/projects")
 public class EngineeringProjectDevController {
     public record CreateRequest(String name,String description) {}
-    public record UpdateRequest(long expectedVersion,String name,String description) {}
+    public record UpdateRequest(Long expectedVersion,String name,String description) {}
 
     private final EngineeringProjectService service;
     public EngineeringProjectDevController(EngineeringProjectService service){this.service=service;}
@@ -39,6 +39,7 @@ public class EngineeringProjectDevController {
     public EngineeringProjectService.ProjectView update(@PathVariable String siteId,
                                                         @PathVariable UUID projectId,
                                                         @RequestBody UpdateRequest request){
+        if(request.expectedVersion()==null)throw new IllegalArgumentException("PROJECT_VERSION_REQUIRED");
         return service.update(siteId,projectId,request.expectedVersion(),request.name(),request.description());
     }
     @DeleteMapping("/{projectId}")
