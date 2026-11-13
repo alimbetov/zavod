@@ -1907,3 +1907,69 @@ Sequence: INT-0A/B immediately; INT-0C alongside R0.6 Studio; INT-1 Graph Analyz
 **Recommended implementation order after test review:** (1) domain and mapping fixtures from existing Java types; (2) immutable contracts and normalization RED tests; (3) static assessment/fingerprint RED tests; (4) minimal GREEN without new DB or dependencies; (5) INT-1 graph tests using existing validated adapters; (6) React Focus integration after R0.6 bridge; (7) separate independent security and engineering review.
 
 **Hard stop:** no implementation approval if existing domain types, catalog pinned versions, actual site authorization behavior or JSON revision compatibility are not reconciled in code review. No production readiness claim from documentation or synthetic line tests.
+
+
+### 24.10 Independent Java code audit and RED-test design review (2026-11-13)
+
+**Review scope:** read-only inspection of the actual default-branch Java sources, not only PR narrative. Inspected:
+- src/main/java/kz/zavod/blueprint/domain/{ProcessBlueprint,BlueprintValidator,BlueprintDiff,BlueprintImpactAnalyzer,BlueprintCatalogAudit,BlueprintReadiness,ResourcePolicyValidator}.java
+- src/main/java/kz/zavod/blueprint/persistence/BlueprintDraftService.java
+- src/main/java/kz/zavod/blueprint/lifecycle/{BlueprintLifecycleService,SiteSecurityConfiguration}.java
+- src/test/java/kz/zavod/blueprint/{BlueprintPersistencePostgresTest,BlueprintLifecyclePostgresTest}.java
+
+**Evidence classification:** CONFIRMED means directly visible in code. SUSPECTED means a reproducible RED test is still needed. NOT IMPLEMENTED means required contract absent from these reviewed modules. Code audit does NOT claim a local Maven run, a new failing test execution, or a live-PLC test. This appendix approves the **RED test specifications**, not yet their executable implementation. No source code or database schema changed.
+
+#### 24.10.1 Audit findings with implementation evidence
+
+| Finding | Severity | Code evidence | Assessment and disposition |
+|---|---|---|---|
+| AUD-INT-C01 | P0 | ProcessBlueprint.Equipment(id,typeKey,templateVersion,ports); Measurement(sensorEquipmentId,monitoredEquipmentId,signalKey) | CONFIRMED: no installed-asset identity, temporal binding, qualified signal metadata. Implement additive contract with separate InstalledAssetRef and MeasurementDefinition; do NOT replace Equipment.id with an installed asset ID. |
+| AUD-INT-C02 | P0 | BlueprintValidator.validate() builds a cycle edge for every Connection and uses cyclicMaterial without checking FlowKind | CONFIRMED: cycles involving INSTRUMENT or UTILITY can receive MATERIAL_CYCLE finding. RED fixtures must distinguish material-cycle publication policy from instrumentation/control cycles; retain safety gate pending domain decision. |
+| AUD-INT-C03 | P0 | BlueprintDraftService.saveDraft() accepts snapshot, expectedPreviousRevision, serializes, CAS-persists; no site ownership or quality checks in this service | CONFIRMED: internal persistence API is not a site-authorized assessment endpoint. Do not expose it directly via REST. R0.6 service boundary must verify actor/site and ownership before save/read/assessment. |
+| AUD-INT-C04 | P1 | ProcessBlueprint.Measurement uses string signalKey without unique qualified SignalBinding or MeasurementDefinition | CONFIRMED: missing provenance, units, quality, sampling and mapping; INT-0 may introduce DTOs but cannot claim physical sensor validation before R3. |
+| AUD-INT-C05 | P1 | BlueprintDiff compares equipment maps by record values; Equipment.ports is a List; BlueprintDraftService hashes serialized JSON | SUSPECTED: reordering equivalent equipment ports may produce a semantic diff/hash difference, despite comments about ignored ordering. Test permutation invariance explicitly; separate canonical engineering fingerprint from immutable stored snapshot content hash. |
+| AUD-INT-C06 | P1 | BlueprintValidator and ResourcePolicyValidator sum demands using int; BlueprintImpactAnalyzer also merges int totals | SUSPECTED: integer overflow is possible for extreme but syntactically valid ResourceUse demands. Test MAX_VALUE arithmetic; use checked long arithmetic or explicit upper bound validation before evaluating resources. |
+| AUD-INT-C07 | P1 | BlueprintValidator errors for UNKNOWN_PORT, INVALID_DIRECTION, INCOMPATIBLE_STREAM are often targeted only at unitId | CONFIRMED: diagnostics currently insufficient for deterministic direct navigation to precise port/connection in Studio; adapter needs richer target references without breaking existing validator codes. |
+| AUD-INT-C08 | P1 | BlueprintImpactAnalyzer union retains new ProcessUnit for same ID while old relations are unioned; old resource uses of modified same-ID units are not retained in union unit list | SUSPECTED: removal of a resource-use edge from an existing unit may under-report previous peer consumers in impact/reasons. Require before/after exact-old/new resource membership fixture; no claim of failure until RED executes. |
+| AUD-INT-C09 | P1 | BlueprintReadiness.blockers enforces stricter publication than draft validate, including RECIRCULATION_UNQUALIFIED | CONFIRMED positive: preserve hard publication gate. Intelligence must never mark a draft publishable based on advisory findings. |
+| AUD-INT-C10 | P1 | SiteSecurityConfiguration denyAll servlet, noNetworkUsers; lifecycle authorize uses SecurityContext principal and SiteMember lookup | CONFIRMED positive boundary: do not disable denyAll simply to expose INT; no network identity provider or site-provisioning is present in inspected implementation. |
+| AUD-INT-C11 | P2 | BlueprintPersistencePostgresTest verifies 99 units/save/reopen, two-writer CAS, corrupted JSON/schema; lifecycle tests verify approve/publish/activate and site checks | CONFIRMED positive baseline but no source-level INT-0 telemetry/asset/replay/security test; create independent RED suites before GREEN. |
+| AUD-INT-C12 | P2 | BlueprintImpactAnalyzer returns affectedUnits as Set.copyOf and reasons Map.copyOf; BlueprintValidator findings depend on traversal input order | SUSPECTED: raw collection iteration order is not a stable public presentation order. Normalize sorting in assessment output; avoid making order-sensitive assertions about Set iteration. |
+
+#### 24.10.2 Required RED-test specification approval (design review)
+
+The following RED cases are **APPROVED TO AUTHOR** because their input, oracle, and ownership are now explicit. Their execution state is PLANNED, not FAILED or PASS.
+
+| RED case | Owner | Input fixture | Required oracle |
+|---|---|---|---|
+| RED-INT-01 Asset lineage | INT-0 contracts + persistence | Blueprint revision1 has equipment E1, revision2 replaces it; old installed asset valid only during previous binding interval | Old assessment remains bound to old equipment and installed-asset interval; no silent relink |
+| RED-INT-02 Qualified signal | INT-0 telemetry contracts | Sample MISSING no value; GOOD finite; bad source; stale at fixed asOf; future timestamp; incompatible unit | Correct effectiveQuality and original sourceQuality, reject numeric invalidity and forbidden conversion; no zero fill |
+| RED-INT-03 Deterministic assessment | INT-0 AssessmentEngine | Same immutable snapshot + rule version + fixed evaluation time, 2 separate assessment executions | Semantic findings/fingerprints equal; run IDs may differ, no Blueprint/DB mutation |
+| RED-INT-04 Missing data vs no finding | INT-0 AssessmentEngine | Unknown template version or missing port binding | PARTIAL + INSUFFICIENT_DESIGN_DATA; never empty success/no-findings on unknown evidence |
+| RED-INT-05 Instrumentation cycle classification | BlueprintValidator + INT-1 adapter | Two equipment nodes with only valid instrumentation connection cycle and a separate genuine MATERIAL cycle | Distinct typed cycle outcomes; publication remains blocked where existing rule requires until domain approval; no blanket reclassification |
+| RED-INT-06 Resource arithmetic | ResourcePolicyValidator and ImpactAnalyzer | 2 consumers with ResourceUse demand near Integer.MAX_VALUE | Never wrap total to negative or green-pass overcommit; deterministic typed failure/checked total |
+| RED-INT-07 Resource edge removal | BlueprintDiff and ImpactAnalyzer | Previous Blueprint has unit A/B sharing resource R; next removes A->R but B remains | Impact includes changed A and relevant previous peer/resource reason according to explicit before/after reachability; no unrelated unit |
+| RED-INT-08 Port permutation | BlueprintDiff/canonical fingerprint | Same blueprint with identical ports in different list order | Explicitly decided equivalence by schema; no phantom engineering change if port order is semantically irrelevant |
+| RED-INT-09 Exact diagnostic navigation | INT-1 mapping + R0.6 Studio | Wrong source direction on Equipment E17 port P2, inside unit L037 | Stable code and unit/equipment/port/connection target; navigate to L037 without all 99 internals |
+| RED-INT-10 Authority boundary | R0.6 secure API + INT-0 | Anonymous, foreign-site actor, viewer attempting assessment, valid site editor; API request containing foreign asset ref | Unauthorized denied without leaked information, authorized server-load exact revision; no client-provided authority |
+| RED-INT-11 Publish independence | BlueprintReadiness + assessment | Unqualified recirculating hydroponic draft with advisory findings | Assessment cannot override preflight/activate; DRAFT retained; no PLC calls |
+| RED-INT-12 Performance baseline | INT-1 + CI | Deterministic 10/50/99 ProcessUnits, seeded changes on L037 and shared asset | Exact impacted targets, capture CPU/JDK, p50/p95 latency, allocations/heap; budget established only after baseline |
+
+**Test categories:** pure JUnit for records/quality/graph, PostgreSQL Testcontainers for historical revision and CAS, Spring Security negative tests for future API boundary, Playwright only after R0.6 GUI exists. No direct database insertion to bypass authority in a test that claims HTTP/security acceptance. Use fixed clock and deterministic fixtures; separate negative RED tests from current passing regression baseline. Assert precise diagnostic codes, severity, referenced IDs and non-mutation; never assert merely “nonempty findings”.
+
+#### 24.10.3 Review gate decisions
+
+- **Gate CODE-REVIEW:** PASS for identifying documented differences in reviewed Java files; NOT a line-by-line complete repository security audit. Evidence set is recorded above.
+- **Gate RED-DESIGN:** APPROVED to implement tests RED-INT-01..12, subject to open domain decisions below. No test binary/code has been committed as a consequence of this review.
+- **Gate RED-EXECUTION:** NOT STARTED; do not claim RED until tests exist, run against current baseline and demonstrate expected failing behavior.
+- **Gate GREEN-IMPLEMENTATION:** HOLD. Only after independent review of RED tests and reconciliation of relevant domain conflicts.
+- **Gate OT-PRODUCTION:** NOT APPLICABLE in current no-PLC stage.
+
+**Open decisions:**
+- DEC-INT-11 (P0): define whether instrumentation/utility graph cycles are valid and which cycle kinds block publishing. A mixed cycle must be evaluated by physical-process semantics, not simply permitted.
+- DEC-INT-12 (P1): port-list ordering semantics for EngineeringGraph, including pinned port key uniqueness and canonical fingerprint.
+- DEC-INT-13 (P1): removed resource membership impact semantics (old vs new dependency, exact reason trace and bounded complexity).
+- DEC-INT-14 (P1): range and dimensional units for SharedAsset.capacity/ResourceUse.demand; current integers are abstract slots, not physical kW/t/h.
+- DEC-INT-15 (P0): source identity, installation history, measurement definitions and time-bound SignalBinding before real telemetry ingestion.
+
+**Recommended next actual work:** create executable RED-INT-01..04 + RED-INT-06..08 first, establish baseline failures without changing main production classes, review tests independently; only then fix core issues. RED-INT-09/10 and browser acceptance depend on secure R0.6 bridge; physical instrumentation cycle publishing requires DEC-INT-11 decision. Keep all implementation status declarations separate from this document-only approval.
