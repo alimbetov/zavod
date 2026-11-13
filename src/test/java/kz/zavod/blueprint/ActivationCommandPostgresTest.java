@@ -85,12 +85,12 @@ class ActivationCommandPostgresTest {
         assertEquals(initial.activationSetId(),afterLostHttpResponse.activationSetId());
         assertEquals(initial.activationSetId(),
                 commands.reconcile(f.site(),"command-1").activationSetId());
-        assertEquals(1,receipts.count());
-        assertEquals(1,transitions.count());
+        assertEquals(1,receipts.countBySiteId(f.site()));
+        assertEquals(1,transitions.countBySiteId(f.site()));
         assertEquals(1,sets.countBySiteId(f.site()));
         assertThrows(BlueprintLifecycleException.class,()->commands.activate(
                 f.site(),"command-1",f.blueprint(),1,"another-set"));
-        assertEquals(1,receipts.count());
+        assertEquals(1,receipts.countBySiteId(f.site()));
     }
 
     @Test void lostCommitAcknowledgementCanBeReconciledWithoutDoubleExecution() {
@@ -113,8 +113,8 @@ class ActivationCommandPostgresTest {
         assertTrue(committed.replayed());
         assertEquals(committed.activationSetId(),
             commands.activate(f.site(),"ack-lost",f.blueprint(),1,null).activationSetId());
-        assertEquals(1,receipts.count());
-        assertEquals(1,transitions.count());
+        assertEquals(1,receipts.countBySiteId(f.site()));
+        assertEquals(1,transitions.countBySiteId(f.site()));
         assertEquals(1,sets.countBySiteId(f.site()));
     }
 
@@ -135,7 +135,7 @@ class ActivationCommandPostgresTest {
             assertEquals(1,results.stream().filter(x->!x.replayed()).count());
             assertEquals(2,results.stream().filter(ActivationCommandService.Receipt::replayed).count());
             assertEquals(1,results.stream().map(ActivationCommandService.Receipt::activationSetId).distinct().count());
-            assertEquals(1,transitions.count());
+            assertEquals(1,transitions.countBySiteId(f.site()));
             assertEquals(1,sets.countBySiteId(f.site()));
         } finally {pool.shutdownNow();}
     }
@@ -145,8 +145,8 @@ class ActivationCommandPostgresTest {
         assertThrows(BlueprintLifecycleException.class,()->commands.reconcile(f.site(),"missing"));
         actor("reviewer");
         assertThrows(SecurityException.class,()->commands.activate(f.site(),"blocked",f.blueprint(),1,null));
-        assertEquals(0,receipts.count());
-        assertEquals(0,transitions.count());
+        assertEquals(0,receipts.countBySiteId(f.site()));
+        assertEquals(0,transitions.countBySiteId(f.site()));
         assertEquals(0,sets.countBySiteId(f.site()));
     }
 }
