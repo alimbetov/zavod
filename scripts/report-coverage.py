@@ -34,7 +34,9 @@ targets = [
 found=set()
 for pkg in root.findall("package"):
     for cls in pkg.findall("class"):
-        name=cls.get("name","").split("$")[0]
+        name=cls.get("name","")
+        # Select the exact outer class. Nested records can contain only one line,
+        # making a misleading 100% when they appear first in the XML.
         if name in targets and name not in found:
             print(f"{name.rsplit('/',1)[-1]}: lines {fmt(cls,'LINE')}, branches {fmt(cls,'BRANCH')}")
             found.add(name)
