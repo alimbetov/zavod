@@ -5,4 +5,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ActivationTransitionRepository extends JpaRepository<ActivationTransitionEntity,String> {
     Optional<ActivationTransitionEntity> findByCommandId(String commandId);
+    long countBySiteId(String siteId);
 }
