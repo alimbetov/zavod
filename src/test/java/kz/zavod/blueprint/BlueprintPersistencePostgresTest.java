@@ -3,6 +3,11 @@ package kz.zavod.blueprint;
 import kz.zavod.blueprint.domain.*;
 import kz.zavod.blueprint.persistence.*;
 import kz.zavod.catalog.EquipmentCatalog;
+import kz.zavod.engineering.*;
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import kz.zavod.lab.PlantScenarios;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -70,6 +75,62 @@ class BlueprintPersistencePostgresTest {
         assertEquals(initial,drafts.loadRevision(id,1),"Old revision stays immutable");
         assertEquals(2,repository.findTopByBlueprintIdOrderByRevisionNoDesc(id.toString()).orElseThrow().revisionNo());
         assertThrows(IllegalStateException.class,()->drafts.saveDraft(revised,1),"No duplicate or blind overwrite");
+    }
+
+
+    @Test
+    void typedEngineeringPropertiesSurvivePostgresAndHistoricV1SnapshotsRemainReadable() throws Exception {
+        UUID id=UUID.randomUUID();
+        var catalog=EquipmentCatalog.standard();
+        var type=catalog.type("water-pump",1);
+        var ports=type.ports().stream().map(p->new Port(p.key(),
+                Direction.valueOf(p.direction().name()),FlowKind.valueOf(p.streamKind().name()),
+                p.medium(),p.minConnections(),p.maxConnections())).toList();
+        var property=new EngineeringPropertyValue("rated_flow",
+                new EngineeringQuantity(new BigDecimal("600"),"L/min"),
+                EngineeringPropertyValue.Source.MANUFACTURER,"pump-manual/page-7");
+        var pump=new Equipment("P101","water-pump",1,ports,List.of(property));
+        var unit=new ProcessUnit("L037",UnitKind.LINE,"continuous.pump.v1",
+                List.of(pump),List.of(),List.of(),List.of(),List.of(),false);
+        var saved=new ProcessBlueprint(id,1,10,List.of(unit),List.of(),List.of(),List.of());
+        assertTrue(BlueprintCatalogAudit.inspect(saved,catalog).isEmpty());
+        drafts.saveDraft(saved,0);
+        assertEquals(saved,drafts.loadLatest(id));
+        String schema=jdbc.queryForObject("select schema_version from blueprint_revision where blueprint_id=?",
+                String.class,id.toString());
+        assertEquals("blueprint.v2",schema,"New design snapshots must explicitly declare new schema");
+
+        var updatedProperty=new EngineeringPropertyValue("rated_flow",
+                new EngineeringQuantity(new BigDecimal("720"),"L/min"),
+                EngineeringPropertyValue.Source.MANUFACTURER,"pump-manual/page-8");
+        var updatedEquipment=new Equipment("P101","water-pump",1,ports,List.of(updatedProperty));
+        var updatedUnit=new ProcessUnit(unit.id(),unit.kind(),unit.profileKey(),List.of(updatedEquipment),
+                unit.connections(),unit.boundaries(),unit.resources(),unit.measurements(),false);
+        var revision2=new ProcessBlueprint(id,2,10,List.of(updatedUnit),List.of(),List.of(),List.of());
+        assertEquals(Set.of("L037"),BlueprintDiff.compare(saved,revision2).changedUnitIds());
+        drafts.saveDraft(revision2,1);
+        assertEquals(saved,drafts.loadRevision(id,1),"Historic rating must not be overwritten");
+        assertEquals(revision2,drafts.loadRevision(id,2));
+
+        UUID legacyId=UUID.randomUUID();
+        var legacyPump=new Equipment("P200","water-pump",1,ports);
+        var legacyUnit=new ProcessUnit("legacy",UnitKind.LINE,"continuous.pump.v1",
+                List.of(legacyPump),List.of(),List.of(),List.of(),List.of(),false);
+        var legacySnapshot=new ProcessBlueprint(legacyId,1,10,
+                List.of(legacyUnit),List.of(),List.of(),List.of());
+        drafts.saveDraft(legacySnapshot,0);
+        String original=jdbc.queryForObject(
+                "select snapshot_json from blueprint_revision where blueprint_id=?",
+                String.class,legacyId.toString());
+        assertTrue(original.contains("\"properties\":[]"),"New snapshots have explicit empty property list");
+        String historicalJson=original.replace(",\"properties\":[]","");
+        assertNotEquals(original,historicalJson,"Simulate a real pre-properties JSON representation");
+        String digest=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(historicalJson.getBytes(StandardCharsets.UTF_8)));
+        jdbc.update("update blueprint_revision set snapshot_json=?,content_hash=?,schema_version=? where blueprint_id=?",
+                historicalJson,digest,"blueprint.v1",legacyId.toString());
+        assertEquals(legacySnapshot,drafts.loadRevision(legacyId,1),
+                "v1 must deserialize missing properties as empty, preserving hash verification");
     }
 
     @Test

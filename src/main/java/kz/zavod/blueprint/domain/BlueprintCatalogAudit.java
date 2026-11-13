@@ -2,6 +2,7 @@ package kz.zavod.blueprint.domain;
 
 import kz.zavod.catalog.EquipmentCatalog;
 import kz.zavod.catalog.EquipmentType;
+import kz.zavod.engineering.EngineeringPropertyAudit;
 import java.util.*;
 import static kz.zavod.blueprint.domain.ProcessBlueprint.*;
 
@@ -36,6 +37,8 @@ public final class BlueprintCatalogAudit {
             }
             for(EquipmentType.Port p:type.ports())if(!declared.contains(p.key()))
                 findings.add(new Finding("MISSING_TEMPLATE_PORT",u.id(),e.id(),p.key()));
+            for(EngineeringPropertyAudit.Finding property:EngineeringPropertyAudit.inspect(type,e.properties()))
+                findings.add(new Finding(property.code(),u.id(),e.id(),property.propertyKey()));
         }
         return List.copyOf(findings);
     }

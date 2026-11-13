@@ -16,7 +16,8 @@ import java.util.UUID;
 /** Server authority for append-only Blueprint drafts; no PLC commands. */
 @Service
 public class BlueprintDraftService {
-    public static final String SCHEMA_VERSION="blueprint.v1";
+    public static final String SCHEMA_VERSION="blueprint.v2";
+    private static final String LEGACY_SCHEMA_VERSION="blueprint.v1";
     private final BlueprintRevisionRepository repository;
     private final BlueprintHeadRepository headRepository;
     private final ObjectMapper objectMapper;
@@ -70,7 +71,8 @@ public class BlueprintDraftService {
     }
 
     private ProcessBlueprint read(BlueprintRevisionEntity row) {
-        if(!SCHEMA_VERSION.equals(row.schemaVersion()))throw new IllegalStateException("UNSUPPORTED_BLUEPRINT_SCHEMA");
+        if(!SCHEMA_VERSION.equals(row.schemaVersion())&&!LEGACY_SCHEMA_VERSION.equals(row.schemaVersion()))
+            throw new IllegalStateException("UNSUPPORTED_BLUEPRINT_SCHEMA");
         if(!sha256(row.snapshotJson()).equals(row.contentHash()))throw new IllegalStateException("CORRUPTED_BLUEPRINT_SNAPSHOT");
         ProcessBlueprint snapshot;
         try { snapshot=objectMapper.readValue(row.snapshotJson(),ProcessBlueprint.class); }

@@ -1,5 +1,6 @@
 package kz.zavod.blueprint.domain;
 
+import kz.zavod.engineering.EngineeringPropertyValue;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -32,11 +33,17 @@ public record ProcessBlueprint(
             if (key.isBlank() || medium.isBlank() || min < 0 || max < 1 || max < min) throw new IllegalArgumentException("Invalid port");
         }
     }
-    public record Equipment(String id, String typeKey, int templateVersion, List<Port> ports) {
+    public record Equipment(String id, String typeKey, int templateVersion, List<Port> ports,
+                            List<EngineeringPropertyValue> properties) {
+        /** Legacy snapshots had no properties field; old constructor remains source-compatible. */
+        public Equipment(String id,String typeKey,int templateVersion,List<Port> ports) {
+            this(id,typeKey,templateVersion,ports,List.of());
+        }
         public Equipment {
             Objects.requireNonNull(id); Objects.requireNonNull(typeKey);
             if (id.isBlank() || typeKey.isBlank() || templateVersion < 1) throw new IllegalArgumentException("Invalid equipment identity");
             ports = List.copyOf(ports);
+            properties = List.copyOf(properties==null?List.of():properties);
         }
     }
     public record Connection(String sourceEquipment, String sourcePort, String targetEquipment, String targetPort) {}

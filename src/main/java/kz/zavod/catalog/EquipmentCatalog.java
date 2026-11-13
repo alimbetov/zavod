@@ -1,5 +1,8 @@
 package kz.zavod.catalog;
 
+import kz.zavod.engineering.EngineeringPropertyDefinition;
+import kz.zavod.engineering.EngineeringUnits;
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,7 +78,10 @@ public final class EquipmentCatalog {
         var types = List.of(
             item("cement-silo", "Cement silo", STORE, Set.of(), port("cement-out", OUT, "cement", 0)),
             item("aggregate-bin", "Aggregate bin", STORE, Set.of(), port("aggregate-out", OUT, "aggregate", 0)),
-            item("water-tank", "Water tank", STORE, Set.of(), port("water-out", OUT, "water", 0)),
+            new EquipmentType("water-tank",1,"Water tank",Set.of(STORE),Set.of(),
+                List.of(port("water-out", OUT, "water", 0)),
+                List.of(new EngineeringPropertyDefinition("nominal_volume",
+                    EngineeringUnits.Dimension.VOLUME,"m3",BigDecimal.ZERO,null,false,true))),
             item("admixture-tank", "Admixture tank", STORE, Set.of(), port("admixture-out", OUT, "admixture", 0)),
             item("cement-scale", "Cement scale", MEASURE, Set.of(), port("cement-in", IN, "cement", 1), port("cement-out", OUT, "cement", 0)),
             item("aggregate-scale", "Aggregate scale", MEASURE, Set.of(), port("aggregate-in", IN, "aggregate", 1), port("aggregate-out", OUT, "aggregate", 0)),
@@ -88,7 +94,16 @@ public final class EquipmentCatalog {
                  port("product-out", OUT, "concrete", 1)),
             item("discharge", "Discharge", DISCHARGE, Set.of(), port("product-in", IN, "concrete", 1)),
             item("process-tank", "Process tank", STORE, Set.of(), port("water-out", OUT, "water", 0)),
-            item("water-pump", "Water pump", PUMP, Set.of(MANUAL_REQUEST, CONTINUOUS_SETPOINT), port("water-in", IN, "water", 1), port("water-out", OUT, "water", 0)),
+            new EquipmentType("water-pump",1,"Water pump",Set.of(PUMP),
+                Set.of(MANUAL_REQUEST,CONTINUOUS_SETPOINT),
+                List.of(port("water-in",IN,"water",1),port("water-out",OUT,"water",0)),
+                List.of(
+                    new EngineeringPropertyDefinition("rated_flow",
+                        EngineeringUnits.Dimension.VOLUMETRIC_FLOW,"m3/h",BigDecimal.ZERO,null,false,true),
+                    new EngineeringPropertyDefinition("rated_power",
+                        EngineeringUnits.Dimension.POWER,"kW",BigDecimal.ZERO,null,false,true),
+                    new EngineeringPropertyDefinition("rated_pressure",
+                        EngineeringUnits.Dimension.PRESSURE,"bar",BigDecimal.ZERO,null,false,true))),
             item("pressure-sensor", "Pressure measurement", MEASURE, Set.of(),
                 new EquipmentType.Port("measurement",IN,"pressure",0,1,EquipmentType.StreamKind.INSTRUMENT)),
             item("shutoff-valve", "Shutoff valve", ISOLATE, Set.of(MANUAL_REQUEST), port("water-in", IN, "water", 1), port("water-out", OUT, "water", 0))

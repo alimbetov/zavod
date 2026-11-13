@@ -1,5 +1,6 @@
 package kz.zavod.catalog;
 
+import kz.zavod.engineering.EngineeringPropertyDefinition;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -12,7 +13,13 @@ public record EquipmentType(
         String label,
         Set<Capability> capabilities,
         Set<Mode> modes,
-        List<Port> ports) {
+        List<Port> ports,
+        List<EngineeringPropertyDefinition> properties) {
+    /** Compatibility for the original v1 templates without numeric properties. */
+    public EquipmentType(String key,int version,String label,Set<Capability> capabilities,
+                         Set<Mode> modes,List<Port> ports) {
+        this(key,version,label,capabilities,modes,ports,List.of());
+    }
 
     public enum Capability { STORE, MIX, DOSE, TRANSFER, PUMP, MEASURE, DISCHARGE, ISOLATE }
     public enum Mode { MANUAL_REQUEST, TIMED, RECIPE_PARAMETERS, CONTINUOUS_SETPOINT }
@@ -43,11 +50,15 @@ public record EquipmentType(
         capabilities = Set.copyOf(Objects.requireNonNull(capabilities, "capabilities"));
         modes = Set.copyOf(Objects.requireNonNull(modes, "modes"));
         ports = List.copyOf(Objects.requireNonNull(ports, "ports"));
+        properties=List.copyOf(properties==null?List.of():properties);
         if (capabilities.isEmpty()) throw new IllegalArgumentException("capabilities must not be empty");
         Set<String> keys = new HashSet<>();
         for (Port port : ports) {
             if (!keys.add(port.key())) throw new IllegalArgumentException("Duplicate port: " + port.key());
         }
+        Set<String> propertyKeys=new HashSet<>();
+        for(EngineeringPropertyDefinition p:properties)
+            if(!propertyKeys.add(p.key()))throw new IllegalArgumentException("Duplicate property: "+p.key());
         if (modes.contains(Mode.RECIPE_PARAMETERS) && !capabilities.contains(Capability.MIX) && !capabilities.contains(Capability.DOSE)) {
             throw new IllegalArgumentException("RECIPE_PARAMETERS requires MIX or DOSE capability");
         }

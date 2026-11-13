@@ -60,7 +60,7 @@ public final class BlueprintDiff {
             // Physical ports are addressed by stable keys. Presentation order is not topology.
             List<Port> ports=new ArrayList<>(e.ports());
             ports.sort(Comparator.comparing(Port::key));
-            Equipment canonical=new Equipment(e.id(),e.typeKey(),e.templateVersion(),ports);
+            Equipment canonical=new Equipment(e.id(),e.typeKey(),e.templateVersion(),ports,e.properties());
             if(m.putIfAbsent(e.id(),canonical)!=null)
                 throw new IllegalArgumentException("Duplicate equipment in diff: "+e.id());
         }
