@@ -145,6 +145,36 @@ class StudioDevApiPostgresTest {
     }
 
     @Test
+    void guidedBuilderGoldenExplanationsAndChangeEndpointAreSiteScoped() throws Exception {
+        String site=createSite(10);
+        var empty=createBlueprint(site);
+        String base="/api/v1/sites/"+site+"/blueprints/"+empty.id();
+        var generated=mvc.perform(get(base+"/guided/pump").param("unitId","L001"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revision").value(2))
+                .andReturn();
+        var starter=json.readValue(generated.getResponse().getContentAsString(),ProcessBlueprint.class);
+        mvc.perform(put(base+"/draft").header(WRITABLE,"true")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(new StudioDevController.SaveDraftRequest(1,starter))))
+                .andExpect(status().isOk());
+        mvc.perform(get(base+"/golden")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.structurallyQualified").value(true))
+                .andExpect(jsonPath("$.physicallyQualified").value(false));
+        mvc.perform(get(base+"/explain")).andExpect(status().isOk());
+        mvc.perform(get(base+"/changes").param("from","1").param("to","2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.changedUnits[0]").value("L001"))
+                .andExpect(jsonPath("$.changedBy").value("NOT_RECORDED"));
+        mvc.perform(get(base+"/revisions/2/hmi-preview"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("INVALID_ENGINEERING_INPUT"));
+        String other=createSite(10);
+        mvc.perform(get("/api/v1/sites/{site}/blueprints/{id}/golden",other,empty.id()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void localOnlyHeaderAndSiteScopeAreEnforced() throws Exception {
         String one=createSite(10);
         String other=createSite(10);
