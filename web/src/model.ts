@@ -84,3 +84,22 @@ export function createGraph(bp:Blueprint) {
   })));
   return {lines,edges};
 }
+
+export type SignalStatus = 'CURRENT'|'UNTRUSTED'|'STALE'|'DISCONNECTED'|'NO_DATA';
+export type SampleQuality = 'GOOD'|'UNCERTAIN'|'BAD'|'STALE'|'DISCONNECTED';
+export interface TelemetrySignalDefinition {
+  id:string;siteId:string;blueprintId:string;blueprintRevision:number;
+  unitId:string;equipmentId:string;signalKey:string;unitCode:string;
+  sourceKind:'SIMULATED'|'EDGE_READ_ONLY';staleAfter:string;
+}
+export interface TelemetrySample {
+  signalId:string;sourceKind:'SIMULATED'|'EDGE_READ_ONLY';sourceEventId:string;
+  value:number;unitCode:string;sourceTime:string;receivedAt:string;quality:SampleQuality;
+}
+export interface TelemetryReading {
+  status:SignalStatus;value:number|null;unitCode:string;
+  observedAt:string|null;evaluatedAt:string;sourceKind:'SIMULATED'|'EDGE_READ_ONLY';
+}
+export interface TelemetrySignalView {
+  definition:TelemetrySignalDefinition;latest:TelemetryReading;history:TelemetrySample[];
+}
