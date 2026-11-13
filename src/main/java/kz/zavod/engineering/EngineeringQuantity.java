@@ -7,7 +7,9 @@ import java.util.Objects;
 public record EngineeringQuantity(BigDecimal value,String unitCode) {
     public EngineeringQuantity {
         Objects.requireNonNull(value,"value");
-        EngineeringUnits.require(unitCode);
+        var unit=EngineeringUnits.require(unitCode);
+        if(unit.dimension()==EngineeringUnits.Dimension.TEMPERATURE)
+            EngineeringUnits.convert(value,unitCode,"K"); // rejects impossible absolute temperatures
     }
     public EngineeringUnits.Dimension dimension(){return EngineeringUnits.dimension(unitCode);}
     public EngineeringQuantity in(String targetUnit) {

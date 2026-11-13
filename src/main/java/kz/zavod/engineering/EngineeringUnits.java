@@ -58,6 +58,8 @@ public final class EngineeringUnits {
         if(source.dimension()!=target.dimension())
             throw new IllegalArgumentException("INCOMPATIBLE_UNIT_DIMENSION:"+from+"->"+to);
         BigDecimal base=value.multiply(source.scaleToBase()).add(source.offsetToBase());
+        if(source.dimension()==Dimension.TEMPERATURE && base.signum()<0)
+            throw new IllegalArgumentException("TEMPERATURE_BELOW_ABSOLUTE_ZERO");
         // Affine conversion matters for Celsius/Kelvin; never use one global multiplication.
         return base.subtract(target.offsetToBase()).divide(target.scaleToBase(),MathContext.DECIMAL128);
     }

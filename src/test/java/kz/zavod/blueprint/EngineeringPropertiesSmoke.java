@@ -41,6 +41,8 @@ public final class EngineeringPropertiesSmoke {
         rejects(()->EngineeringUnits.convert(d("3"),"m3/h","m3"),"INCOMPATIBLE_UNIT_DIMENSION");
         rejects(()->EngineeringUnits.convert(d("3"),"pH","mS/cm"),"INCOMPATIBLE_UNIT_DIMENSION");
         rejects(()->EngineeringUnits.convert(d("3"),"invalid","K"),"UNKNOWN_ENGINEERING_UNIT");
+        rejects(()->new EngineeringQuantity(d("-274"),"degC"),"TEMPERATURE_BELOW_ABSOLUTE_ZERO");
+        rejects(()->EngineeringUnits.convert(d("-1"),"K","degC"),"TEMPERATURE_BELOW_ABSOLUTE_ZERO");
 
         var catalog=EquipmentCatalog.standard();
         var pump=catalog.type("water-pump",1);
