@@ -221,6 +221,26 @@ class BusinessTransitionLedgerPostgresTest {
                 .filter(x->x.siteId().equals(f.site())).findFirst().orElseThrow().errorCode());
     }
 
+    @Test void corruptedSiteMustNotHideHealthySiteAuditEvidence() {
+        var damaged=setup();
+        var healthy=setup();
+        actor("reviewer");
+        lifecycle.approve(damaged.site(),damaged.blueprint(),1,Set.of("L1"));
+        lifecycle.approve(healthy.site(),healthy.blueprint(),1,Set.of("L1"));
+        jdbc.update("update business_transition set actor_id='forged' "+
+                "where site_id=? and sequence_no=1",damaged.site());
+        var report=fullAudit.auditAll(Map.of());
+        assertFalse(report.passed());
+        var bad=report.sites().stream().filter(x->x.siteId().equals(damaged.site()))
+                .findFirst().orElseThrow();
+        var good=report.sites().stream().filter(x->x.siteId().equals(healthy.site()))
+                .findFirst().orElseThrow();
+        assertEquals("FAIL",bad.status());
+        assertEquals("PASS",good.status());
+        assertEquals(1,good.sequenceNo(),
+                "a failed site must not roll back or suppress successful independent audits");
+    }
+
     @Test void journalInsertFailureRollsBackApprovalAtomically() {
         var f=setup();
         actor("reviewer");
