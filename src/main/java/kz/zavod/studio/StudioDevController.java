@@ -124,6 +124,16 @@ public class StudioDevController {
                 latest.maxActiveLines(),unitId,catalog);
     }
 
+    /** Concrete multi-line starter is a proposal only; no automatic persistence/approval. */
+    @GetMapping("/sites/{siteId}/blueprints/{blueprintId}/guided/concrete")
+    public ProcessBlueprint guidedConcrete(@PathVariable String siteId,@PathVariable UUID blueprintId,
+                                          @RequestParam(defaultValue="CP01") String unitPrefix) {
+        var latest=blueprints.load(siteId,blueprintId);
+        if(!latest.units().isEmpty())throw new IllegalArgumentException("GUIDED_BUILDER_REQUIRES_EMPTY_BLUEPRINT");
+        return GuidedBlueprintBuilder.concreteStarter(latest.id(),latest.revision()+1,
+                latest.maxActiveLines(),unitPrefix,catalog);
+    }
+
     /** Structural constraints only: never claims physical process certification. */
     @GetMapping("/sites/{siteId}/blueprints/{blueprintId}/golden")
     public EngineeringGoldenModel.Report golden(@PathVariable String siteId,@PathVariable UUID blueprintId) {
