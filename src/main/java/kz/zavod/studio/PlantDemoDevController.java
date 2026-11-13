@@ -117,7 +117,13 @@ public class PlantDemoDevController {
         String previous=sites.findById(siteId).orElseThrow().activeSetId();
         // Fixed per-revision key: retry after dropped response remains idempotent.
         String key="local-demo-"+blueprintId+"-r"+revision;
-        asActor(ACTIVATOR,()->commands.activate(siteId,key,blueprintId,revision,previous));
+        asActor(ACTIVATOR,()->{
+            // A previous response may have been lost after COMMIT. Never build a
+            // second payload with a different expected pointer for the same key.
+            if(commands.observe(siteId,key).state()==ActivationCommandService.OutcomeState.COMMITTED)
+                return commands.reconcile(siteId,key);
+            return commands.activate(siteId,key,blueprintId,revision,previous);
+        });
         return status(siteId,blueprintId,revision);
     }
     private SignalDefinition demoSignal(String siteId,UUID blueprintId,long revision) {
