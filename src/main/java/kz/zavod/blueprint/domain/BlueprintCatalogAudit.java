@@ -18,10 +18,22 @@ public final class BlueprintCatalogAudit {
             if(type.version()!=e.templateVersion()){
                 findings.add(new Finding("TEMPLATE_VERSION_MISMATCH",u.id(),e.id(),e.typeKey()));continue;
             }
-            Set<String> portKeys=new HashSet<>();
-            for(EquipmentType.Port p:type.ports())portKeys.add(p.key());
-            for(Port p:e.ports())if(!portKeys.contains(p.key()))
-                findings.add(new Finding("UNRECOGNIZED_CATALOG_PORT",u.id(),e.id(),p.key()));
+            Map<String,EquipmentType.Port> templatePorts=new HashMap<>();
+            for(EquipmentType.Port p:type.ports())templatePorts.put(p.key(),p);
+            Set<String> declared=new HashSet<>();
+            for(Port p:e.ports()) {
+                declared.add(p.key());
+                EquipmentType.Port required=templatePorts.get(p.key());
+                if(required==null) {
+                    findings.add(new Finding("UNRECOGNIZED_CATALOG_PORT",u.id(),e.id(),p.key()));
+                } else if(!required.direction().name().equals(p.direction().name())
+                        || !required.medium().equals(p.medium())
+                        || required.minConnections()!=p.min() || required.maxConnections()!=p.max()) {
+                    findings.add(new Finding("TEMPLATE_PORT_SCHEMA_MISMATCH",u.id(),e.id(),p.key()));
+                }
+            }
+            for(EquipmentType.Port p:type.ports())if(!declared.contains(p.key()))
+                findings.add(new Finding("MISSING_TEMPLATE_PORT",u.id(),e.id(),p.key()));
         }
         return List.copyOf(findings);
     }
