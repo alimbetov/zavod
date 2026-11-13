@@ -36,7 +36,16 @@ docker exec "$SOURCE" pg_isready -U zavod -d g42 >/dev/null
 psql_source() {
   docker exec -i "$SOURCE" psql -q -t -A -v ON_ERROR_STOP=1 -U zavod -d g42 -c "$1"
 }
-psql_source "CREATE TABLE pitr_marker(marker text PRIMARY KEY, committed_at timestamptz NOT NULL DEFAULT clock_timestamp());" >/dev/null
+# The official image briefly starts a temporary bootstrap postmaster.
+# pg_isready may succeed against it immediately before bootstrap shutdown.
+stable=false
+for _ in $(seq 1 80); do
+  if psql_source "CREATE TABLE IF NOT EXISTS pitr_marker(marker text PRIMARY KEY, committed_at timestamptz NOT NULL DEFAULT clock_timestamp());" >/dev/null 2>&1; then
+    stable=true; break
+  fi
+  sleep 0.5
+done
+[[ "$stable" == true ]] || { docker logs "$SOURCE" >&2; exit 1; }
 psql_source "INSERT INTO pitr_marker(marker) VALUES ('baseline');" >/dev/null
 
 # PostgreSQL physical backup before the recovery target; include WAL via -X stream.
