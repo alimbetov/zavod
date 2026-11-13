@@ -24,4 +24,6 @@ jobs:
       - name: Pure Java Blueprint verification
         run: bash scripts/test-blueprint-core.sh
       - name: JPA/PostgreSQL Save-Reopen-Impact regression
-        run: mvn -B --no-transfer-progress test
+        run: mvn -B --no-transfer-progress verify
+      - name: Print measured JaCoCo coverage for business core
+        run: python3 scripts/report-coverage.py target/site/jacoco/jacoco.xml

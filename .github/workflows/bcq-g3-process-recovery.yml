@@ -1,0 +1,21 @@
+name: bcq-g3-process-recovery
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Force Java process crash, read same PostgreSQL, restore backup
+        run: bash scripts/test-bcq-recovery.sh
