@@ -122,6 +122,21 @@ class TelemetryIngestionPostgresTest {
         assertEquals(0,count(def.id()));
     }
 
+    @Test void boundedHistoryReturnsMostRecentSamplesInAscendingTimeline() {
+        var def=createSignal();
+        Instant base=Instant.now().minusSeconds(150);
+        for(int i=0;i<115;i++) {
+            ingestion.ingestSimulated(def.siteId(),def.blueprintId(),2,def.id(),
+                    sample(String.format("event-%03d",i),base.plusSeconds(i),Integer.toString(i)));
+        }
+        var history=ingestion.history(def.siteId(),def.blueprintId(),2,def.id(),
+                base.minusSeconds(1),base.plusSeconds(120),5);
+        assertEquals(List.of("event-110","event-111","event-112","event-113","event-114"),
+                history.stream().map(TelemetrySample::sourceEventId).toList(),
+                "limit must retain newest samples while presenting time ascending");
+        assertEquals(115,count(def.id()));
+    }
+
     @Test void concurrentSameEventCommitsExactlyOneRow() throws Exception {
         var def=createSignal();
         var item=sample("same-event",Instant.now().minusSeconds(2),"2");
