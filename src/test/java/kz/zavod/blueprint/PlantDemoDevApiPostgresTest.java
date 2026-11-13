@@ -1,6 +1,9 @@
 package kz.zavod.blueprint;
 
 import java.util.UUID;
+import java.time.Duration;
+import kz.zavod.telemetry.SignalRegistryService;
+import kz.zavod.telemetry.TelemetryContracts.*;
 import kz.zavod.blueprint.domain.GuidedBlueprintBuilder;
 import kz.zavod.blueprint.lifecycle.BusinessTransitionLedger;
 import kz.zavod.catalog.EquipmentCatalog;
@@ -42,6 +45,32 @@ class PlantDemoDevApiPostgresTest {
     @Autowired SiteRepository sites;
     @Autowired StudioBlueprintService blueprints;
     @Autowired BusinessTransitionLedger ledger;
+    @Autowired SignalRegistryService registry;
+    @Test void demoMustNotReuseSignalOfUnexpectedEquipment() throws Exception {
+        String site="local-"+UUID.randomUUID();
+        sites.saveAndFlush(new SiteEntity(site,10));
+        var bp=blueprints.create(site);
+        blueprints.saveDraft(site,bp.id(),1,GuidedBlueprintBuilder.concreteStarter(
+                bp.id(),2,10,"CP01",EquipmentCatalog.standard()));
+        String path="/api/v1/sites/"+site+"/blueprints/"+bp.id()+"/revisions/2/demo";
+        // Register a SIMULATED pressure alias on the mixing unit, but on the
+        // DIFFERENT physical component (not the controlled water doser).
+        registry.registerSimulated(new SignalDefinition(UUID.randomUUID(),site,bp.id(),2,
+                "CP01-MIX","mixer","demo-pressure","bar",
+                SourceKind.SIMULATED,Duration.ofMinutes(2)));
+        String header="X-Zavod-Dev-Write";
+        mvc.perform(post(path+"/approve").header(header,"true")).andExpect(status().isOk());
+        mvc.perform(post(path+"/publish").header(header,"true")).andExpect(status().isOk());
+        mvc.perform(post(path+"/activate").header(header,"true")).andExpect(status().isOk());
+        mvc.perform(post(path+"/simulate").header(header,"true")
+                .contentType(MediaType.APPLICATION_JSON).content("{\"scenario\":\"ALARM\"}"))
+                .andExpect(status().isUnprocessableEntity());
+        ledger.verifySite(site);
+        mvc.perform(get(path)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.signalCount").value(1))
+                .andExpect(jsonPath("$.transitionCount").value(3));
+    }
+
     @Test void completeConcreteDemoUsesRealLifecycleAndPersistsSimulatedAlarm() throws Exception {
         String site="local-"+UUID.randomUUID();
         sites.saveAndFlush(new SiteEntity(site,10));
