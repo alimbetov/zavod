@@ -103,3 +103,20 @@ export interface TelemetryReading {
 export interface TelemetrySignalView {
   definition:TelemetrySignalDefinition;latest:TelemetryReading;history:TelemetrySample[];
 }
+
+/** Dev-local synthetic demonstration. Never an industrial operating permit. */
+export interface DemoStatus {
+  approvalState:'DRAFT'|'APPROVED'|'PUBLISHED'|'REVOKED';
+  active:boolean;
+  activationSetId:string|null;
+  signalCount:number;
+  transitionCount:number;
+}
+export interface DemoSimulation {
+  scenario:'NORMAL'|'ALARM';
+  unitId:string;
+  signalId:string;
+  eventId:string;
+  value:number;
+  unitCode:string;
+}
