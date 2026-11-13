@@ -1179,7 +1179,7 @@ flowchart TB
 
 ### 17.7 Воспроизводимые синтетические результаты
 
-Выполнение `bash scripts/test-plant-scenario-lab.sh`, на отдельной Java 21 лаборатории (24 условных десятка тактов = **240 тиков**).
+Выполнение `bash scripts/test-plant-scenario-lab.sh`, на отдельной Java 21 лаборатории (**240 условных тиков**).
 
 | Линии | Nodes | Internal edges | Transfers | Dependencies | Virtual units per 240 ticks |
 |---:|---:|---:|---:|---:|---:|
