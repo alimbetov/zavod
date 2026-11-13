@@ -15,7 +15,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -48,7 +48,7 @@ class BusinessLedgerAuditSnapshotPostgresTest {
     @Autowired BlueprintLifecycleService lifecycle;
     @Autowired BusinessLedgerAuditService auditor;
     @Autowired BusinessTransitionRepository transitions;
-    @SpyBean BusinessTransitionLedger ledger;
+    @MockitoSpyBean BusinessTransitionLedger ledger;
 
     private static void actor(String name) {
         SecurityContextHolder.getContext().setAuthentication(
