@@ -4,8 +4,9 @@ set -euo pipefail
 export PGHOST="${PGHOST:-127.0.0.1}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-zavod}" PGDATABASE="${PGDATABASE:-zavod}"
 psql -X -v ON_ERROR_STOP=1 <<'SQL'
 DROP TABLE IF EXISTS migration_blueprint_owner_manifest, blueprint_view_layout,plant_activation_set,
- blueprint_approval,blueprint_revision,blueprint_site,blueprint_head,site CASCADE;
+ blueprint_approval,blueprint_revision,blueprint_site,blueprint_head,site_member,site CASCADE;
 CREATE TABLE site(site_id varchar(64) PRIMARY KEY,active_set_id varchar(36));
+CREATE TABLE site_member(id varchar(36) PRIMARY KEY,site_id varchar(64) NOT NULL);
 CREATE TABLE blueprint_head(blueprint_id varchar(36) PRIMARY KEY,revision_no bigint NOT NULL);
 CREATE TABLE blueprint_site(blueprint_id varchar(36) PRIMARY KEY,site_id varchar(64) NOT NULL);
 CREATE TABLE blueprint_revision(id varchar(36) PRIMARY KEY,blueprint_id varchar(36) NOT NULL,revision_no bigint NOT NULL);

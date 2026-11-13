@@ -3,6 +3,10 @@
 -- Expected: every anomaly count = 0 before enterprise release.
 -- Run against a backup/restored staging database first; not a repair script.
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SELECT 'orphan_site_members' AS finding, count(*) AS affected
+FROM site_member sm LEFT JOIN site s ON s.site_id=sm.site_id
+WHERE s.site_id IS NULL
+UNION ALL
 SELECT 'unassigned_heads' AS finding, count(*) AS affected
 FROM blueprint_head h LEFT JOIN blueprint_site o ON o.blueprint_id=h.blueprint_id
 WHERE o.blueprint_id IS NULL
