@@ -90,11 +90,14 @@ class TelemetryIngestionPostgresTest {
                 sample("later",now.minusSeconds(1),"3"));
         ingestion.ingestSimulated(def.siteId(),def.blueprintId(),2,def.id(),
                 sample("earlier",now.minusSeconds(30),"1"));
-        var reading=ingestion.latest(def.siteId(),def.blueprintId(),2,def.id(),now);
+        // receivedAt is later than the source clock captured before ingestion.
+        // Evaluate after commit; time-travel reads remain UNTRUSTED by design.
+        var evaluationTime=Instant.now().plusMillis(100);
+        var reading=ingestion.latest(def.siteId(),def.blueprintId(),2,def.id(),evaluationTime);
         assertEquals(Status.CURRENT,reading.status());
         assertEquals(0,reading.value().compareTo(new BigDecimal("3")));
         assertEquals(Status.STALE,ingestion.latest(def.siteId(),def.blueprintId(),2,
-                def.id(),now.plusSeconds(40)).status());
+                def.id(),evaluationTime.plusSeconds(40)).status());
         var history=ingestion.history(def.siteId(),def.blueprintId(),2,def.id(),
                 now.minusSeconds(60),now.plusSeconds(1),5);
         assertEquals(List.of("earlier","later"),history.stream()
