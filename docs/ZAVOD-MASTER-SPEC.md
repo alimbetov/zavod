@@ -1529,3 +1529,143 @@ CI проверил также три предыдущих JPA/PostgreSQL тес
 - **Инженерные профили:** искусственные 99-line тесты могут содержать непроверенные типы; нельзя автоматически публиковать такие схемы. В lifecycle test используются реальные catalog-defined water tanks с корректной port schema.
 
 **Следующий продуктовый этап:** R0.6 React Blueprint Studio + virtual HMI (Save→Reopen, hydroponic CIRCUIT + factory LINE fixtures). Затем read-only SCADA/Telemetry с отдельным OT review. Intelligence INT-001…008 запускать лишь после получения измерений и фактических производственных событий.
+
+
+---
+
+## 22. R0.6 — Zavod Blueprint Studio: UX-концепция, технический аудит и ТЗ первого рабочего React-конструктора
+
+**Решение:** Zavod Blueprint Studio — рабочая 2D-среда проектирования физических процессов, с инженерной семантикой Unreal Engine Blueprint Editor (Asset Palette, Hierarchy, Graph, Details/Inspector, Compile/Validate, virtual Play), **но не игровой движок и не программируемый PLC**. Пользователь визуально определяет ProcessUnit, экземпляры оборудования, физические порты, связи, измерения и зависимости. Из одного versioned Engineering Blueprint в следующих релизах строятся виртуальная симуляция, HMI/SCADA read-only projection и MES. **Статус этого раздела: техническое ревью и ТЗ, не реализация React-приложения.**
+
+### 22.1 Техническая доказательная база (2026-11-13)
+
+1. `main` до разработки Studio содержит Java 21/Spring Boot/JPA/PostgreSQL, ProcessBlueprint (LINE/CIRCUIT/ZONE/STATION), 15 catalog templates, 2 отраслевых профиля, typed ports, Validator/Readiness, Diff/Impact, append-only revision storage, внутренние Approve/Publish/Activate, SiteMembership и PlantActivationSet. Java/JPA CI PASS; это backend foundation, не GUI.
+2. В `main` **нет** `frontend/`, React/Vite/TypeScript, Node lockfile, HTTP Blueprint API, Canvas Layout entity, Playwright browser tests и backend virtual HMI endpoint. Spring Security Servlet filter `denyAll` и `noNetworkUsers` намеренно препятствуют неквалифицированному сетевому доступу.
+3. Проверен прежний локальный архив `industrialos-line-designer-r0-1.zip` (не находится в `main`): `npm test` на Node 22.16.0 → 18/18 PASS. Демо: 9 nodes, 8 edges, 11 equipment types; `src/App.tsx` содержит монолитный React Flow UX, `src/domain.ts` — собственный материальный каталог и JSON v2. **Browser build/E2E не подтверждены** (архив без lockfile/node_modules; предыдущий аудит зафиксировал недоступность npm registry). Старый визуальный прототип — **донор UI-паттернов, не источник инженерной истины**.
+4. Семантика старого прототипа `powder/aggregate/liquid/concrete` и 11 шаблонов несовместима напрямую с Java catalog `cement/aggregate/water/admixture/...`, версионированными `EquipmentType.Port` и `ProcessBlueprint.Port(FlowKind,medium,min,max)`. Нельзя делать best-effort silent JSON conversion или дублировать независимый TypeScript-каталог.
+5. Версия представления на холсте, положения x/y, масштаб, группы, выделение и состояние панелей **отсутствуют** в Java ProcessBlueprint. Их нельзя добавлять в physical topology или запускать Diff/Impact при простом перетаскивании. В раннем прототипе `localStorage` может молча подменять повреждённый черновик демо-объектом: поведение запрещено.
+6. R0.4 laboratory simulator и R0.1 topological waves — **не** калиброванная физическая симуляция; рециркуляция CIRCUIT остаётся unqualified для публикации. Превью должно явно маркировать VIRTUAL/SYNTHETIC, time/quantity и signal quality не выдумывать.
+
+### 22.2 Блокирующие результаты аудита
+
+| ID | Приоритет | Дефект/риск | Обязательное решение |
+|---|---|---|---|
+| AUD-STUDIO-001 | P0 | Нет интегрированного React/Vite фронтенда в `main` | `frontend/` (React, TS, Vite, @xyflow/react), reproducible `package-lock.json`, `npm ci`, фронтенд CI |
+| AUD-STUDIO-002 | P0 | Два несовместимых equipment catalog и media mapping | Один authoritative Java Catalog API; UI генерирует palette/typed handles из DTO, в тестах проверяет совпадение key/version/flowKind/medium/cardinality |
+| AUD-STUDIO-003 | P0 | Не существует API/публичной аутентификации; deny-all корректен | Site-scoped authenticated BFF/REST, Spring Security session+CSRF или эквивалентный утверждённый auth provider; edit permission; deny-all до включения проверенного auth |
+| AUD-STUDIO-004 | P0 | Canvas position смешивается с React Flow graph и будет теряться при JPA round-trip | `BlueprintViewState` отдельно от `ProcessBlueprint`; стабильные IDs, собственная revision/layout version, сохранение/восстановление положения |
+| AUD-STUDIO-005 | P0 | Не согласован schema+ownership contract для GUI | Typed DTO mapper/adapters, explicit schema version, validation of max size/depth, no arbitrary user-supplied Java class names, server UUID ownership checks |
+| AUD-STUDIO-006 | P0 | Клиентская проверка и серверная проверка могут расходиться | UI instant guidance + server authoritative validation, identical stable diagnostic codes, exact element references; server may reject invalid publish and retain DRAFT |
+| AUD-STUDIO-007 | P0 | Draft save может быть перезаписан при гонке/повреждённом local cache | `expectedRevision`/ETag, typed 409 conflict UX, recovery screen + explicit export; never silent demo fallback; no auto-publish |
+| AUD-STUDIO-008 | P0 | UI рисует все 99 линии и сотни узлов как один Canvas | `Plant Overview` на уровне ProcessUnits и InterUnit links; `ProcessUnit Editor` загружает/рендерит только выбранный технологический модуль |
+| AUD-STUDIO-009 | P0 | У гидропоники несовместимый с физикой цикл и отсутствует process-qualified profile | Позволить редактировать как DRAFT, показать `RECIRCULATION_UNQUALIFIED`; не маркировать publishable без отдельной квалификации |
+| AUD-STUDIO-010 | P0 | В раннем UI animation может выглядеть как real process | Только `Virtual Preview` с маркировкой VIRTUAL, запрет PLC write и недоказанных throughput/pressure/pH states |
+| AUD-STUDIO-011 | P1 | UI App монолит, нет browser end-to-end тестов | Palette/Canvas/Inspector/Validation/Overview/ViewState/ApiClient как независимые компоненты; Playwright Chromium smoke, import/export/undo |
+| AUD-STUDIO-012 | P1 | Нет Undo/Redo, удаления зависимого оборудования с Impact и подтверждения | Undo/Redo локального draft, confirmation + affected connections, не мутировать approved revisions |
+| AUD-STUDIO-013 | P1 | Нет фиксированного quality/performance baseline | 10/50/99 overview cases, focused one-line 30–100 nodes, PerformanceObserver/browser metrics, React memo, no whole-graph state subscriptions |
+| AUD-STUDIO-014 | P1 | Нет accessibility/i18n/keyboard flows | RU first, externalized UI messages and catalog label keys with planned KZ/EN, keyboard navigation, visual diagnostics not relying on color alone |
+| AUD-STUDIO-015 | P1 | Измерения и PLC tags сводятся к строковому `signalTag` в старом UI | Отдельные Instrumentation/SignalBinding presentations; no invented OPC UA/Modbus register config, no direct PLC writes |
+| AUD-STUDIO-016 | P2 | Нет 3D/CAD и пространственного размещения | **Явно вне R0.6**: 2D process schematic first. 3D site model отдельное optional extension, не предпосылка для редактора |
+
+### 22.3 UX-контракт «как Unreal Blueprint, но для процесса»
+
+**Основная оболочка:**
+- **Project/Site Explorer** (слева): Site → Plant → ProcessUnit (LINE/CIRCUIT/ZONE/STATION); искать, фильтровать, переключать без загрузки 99 внутренних графов.
+- **Equipment Palette** (слева): категории Storage/Transfer/Measure/Process/Utility, текстовый поиск, version-aware equipment definition; drag-and-drop порождает immutable equipment instance ID.
+- **Engineering Canvas** (центр): React Flow nodes/edges, handles по реальным `PortDefinition`, zoom/pan/minimap/grid, multi-select, group, interunit boundary placeholders. Физические разные порты воды и добавки должны быть отдельными handles.
+- **Inspector/Details** (справа): model/typeKey/version, параметры, port list/connection status, unit/medium, measurement attachments. Недопустимые параметры не исчезают при перерисовке.
+- **Validation Console** (внизу): `code + severity + unitId/equipmentId/portKey/edgeId + messageKey`, переход к конкретному объекту, разделение DRAFT warnings, blocking publish errors.
+- **Toolbar:** Save Draft, Undo, Redo, Validate, Compare Revisions, Virtual Preview (never physical controller), Publish/Activate **не показывать как доступное действие без server-authorized role and passed preflight**.
+- **Plant Overview:** сжатый межмодульный граф N=1…99 и общие ресурсы. Режимы связей MaterialTransfer/ItemFlow/Dependency/ResourceUse различаются цветом, легендой, подписью и свойствами; не все отношения рисовать одной стрелкой.
+- **Virtual HMI Preview:** read-only projection from selected Blueprint and synthetic signal-provider, `SIMULATED` visible watermark, no PLC credentials/commands; аварийные выводы не имитировать как safety qualification.
+
+Ключевой UX-сценарий: «Новая площадка → создать ProcessUnit → добавить 3–6 устройств → соединить реальные совместимые порты → поправить свойства → Validate → сохранить Draft → закрыть вкладку → открыть → позиция и физическая схема неизменны → Virtual Preview». Для 99 units: «Plant Overview → выбрать L037 → изменить порт → серверный Impact → показать downstream/dependent objects → сохранить Revision N+1».
+
+### 22.4 Четыре независимо версионируемых представления
+
+1. **EngineeringGraph** = серверный `ProcessBlueprint`: Equipment, typed Port, internal Connection, Boundary, Transfer, Dependency, SharedAsset, Measurement; **только Backend authoritative**.
+2. **ViewLayout** = отдельный persistence contract: `siteId,blueprintId,unitId,viewId,layoutVersion,positionsByStableEquipmentId,edgeWaypoints?,groups?,viewport`; screen positions и grouping не меняют physical blueprint revision и не создают change-set Impact. Selection/panels могут быть purely client-local.
+3. **SimulationSession** = `blueprintRevision,unitId,clock/seed,source=SIMULATED,status/provenance`; не перезаписывает engineering history и не содержит physical command channel.
+4. **HmiProjection** = вычисляемый набор widget labels/states/measurements derived from Blueprint + qualified signal source; R0.6 использует только virtual data; позднее SCADA snapshot is read-only.
+
+**Anti-corruption layer:** `ReactFlow.Node/Edge/Handle` никогда не сериализовать как `ProcessBlueprint` напрямую. Adapter `BlueprintDTO ↔ EngineeringEditorModel` отделяет ID оборудования, портов и model data от canvas x/y и состояния UI. Server-side schema validation и version-specific migrations обязательны. Никаких двух авторитетных каталогов.
+
+### 22.5 P0 API contracts — сначала безопасность, затем интеграция
+
+Спецификация маршрутов; **в текущем main они не реализованы**:
+
+| Метод / route prefix `/api/v1/sites/{siteId}` | Значение / ответ |
+|---|---|
+| `GET /equipment-types` | Versioned catalog DTO, port definitions, capabilities, filtered categories |
+| `GET /blueprints/{blueprintId}/revisions/{revision}` | Site-scoped immutable Engineering Blueprint (read access) |
+| `POST /blueprints` | Создать пустой безопасный DRAFT и owner/site association |
+| `PUT /blueprints/{blueprintId}/draft` | Сохранить full canonical draft с expectedRevision/If-Match, 409 on stale; body size limit |
+| `POST /blueprints/{blueprintId}/validate` | Server authoritative structural diagnostics, no side effects |
+| `GET /blueprints/{blueprintId}/impact?from={n}&to={m}` | Exact diff + reasons/affected IDs from two revisions |
+| `GET /blueprints/{blueprintId}/layouts/{viewId}` | Отдельный canvas layout, graph scope/actor permissions |
+| `PUT /blueprints/{blueprintId}/layouts/{viewId}` | Position & viewport CAS independent of Blueprint engineering revision |
+| `GET /plant/overview` | Compact process unit metadata, dependencies and shared-asset summary; no 99-unit full graph payload |
+| `POST /blueprints/{blueprintId}/preflight` | Role-aware server preflight для requested active unit selection, без Publish side effects |
+
+Сетевые Approve/Publish/Activate API — **после** завершения аутентификации, RBAC и CSRF/security acceptance. Не раскрывать прямо наружу JPA entities. Использовать Java immutable DTOs + mapper с exact schema and stable ID. Ошибки `400/401/403/404/409/422` содержат predictable error code; внутренние SQL/stack traces никогда не показывать пользователю.
+
+**Требуемое изменение ролей:** нынешние `VIEWER/REVIEWER/PUBLISHER/ACTIVATOR/ADMIN` не содержат отдельного `EDITOR`; право редактировать и создавать Draft должно быть server-owned, отдельно от права APPROVE/PUBLISH. В продакшене нельзя предоставлять случайному автору роль ADMIN лишь ради сохранения своего черновика.
+
+### 22.6 Реестр требований R0.6 (P0/P1)
+
+| Requirement | Priority | Реализуемое поведение | Приёмка |
+|---|---|---|---|
+| STUDIO-001 | P0 | Создать `frontend/` с lockfile, typed React Flow Editor, no paid UI dependencies | SC-STUDIO-001 |
+| STUDIO-002 | P0 | Полный каталог с Backend через versioned Equipment API | SC-STUDIO-002, 007 |
+| STUDIO-003 | P0 | Site-scoped auth + dedicated DRAFT EDIT permission + strict API security | SC-STUDIO-003, 014 |
+| STUDIO-004 | P0 | Добавить/удалить/изменить EquipmentInstance со стабильным ID и typed physical ports | SC-STUDIO-004, 005 |
+| STUDIO-005 | P0 | Проверка port flow direction/medium/cardinality клиентом и подтверждение сервером | SC-STUDIO-006, 007 |
+| STUDIO-006 | P0 | Draft Save/Reopen на PostgreSQL + версионный conflict UI | SC-STUDIO-008, 009 |
+| STUDIO-007 | P0 | Отдельное сохранение x/y/zoom без изменения engineering revision | SC-STUDIO-010 |
+| STUDIO-008 | P0 | Server diagnostics with navigation/highlight to precise equipment, port and boundary | SC-STUDIO-011 |
+| STUDIO-009 | P0 | Plant Overview N=99, lazy one ProcessUnit Canvas and interunit navigation | SC-STUDIO-012, 015 |
+| STUDIO-010 | P0 | Virtual Preview labelled SIMULATED, no physical PLC control | SC-STUDIO-013 |
+| STUDIO-011 | P0 | Hydroponics CIRCUIT draft and packaging/concrete LINE share one schema; no false publish | SC-STUDIO-016 |
+| STUDIO-012 | P1 | Recovery for damaged local cache, explicit discard/export, undo/redo | SC-STUDIO-017 |
+| STUDIO-013 | P1 | Impact-aware delete of linked equipment and revision compare | SC-STUDIO-018 |
+| STUDIO-014 | P1 | Playwright browser tests + frontend npm ci / TypeScript build in `main` CI | SC-STUDIO-019 |
+| STUDIO-015 | P1 | Performance/a11y/i18n baseline for 99 overview and 30–100 node local Canvas | SC-STUDIO-020 |
+
+### 22.7 Исполняемые acceptance сценарии (пока RED/PLANNED)
+
+| ID | Независимый проверяемый сценарий | PASS |
+|---|---|---|
+| SC-STUDIO-001 | `npm ci && npm run build && npm test` on clean Linux runner, pinned Node/toolchain | Success, no missing packages, documented licensing |
+| SC-STUDIO-002 | API catalog 15 Java templates, version pinned; render palette and handles | UI matches server keys, versions and Port schemas exactly |
+| SC-STUDIO-003 | Anonymous/foreign site user attempts Create/Save/Delete | Request denied; no cross-site disclosure/write |
+| SC-STUDIO-004 | Drag water-tank + water-pump + valve onto Canvas | Three stable IDs with correct port maps, after reload unchanged |
+| SC-STUDIO-005 | Drag two physical ports of same Equipment and change allowed connections | Only correct model port binding, no silently reassigned handles |
+| SC-STUDIO-006 | Connect water→water, water→cement, IN→IN, occupied max=1 | First allowed; others rejected with exact code and highlighted ports |
+| SC-STUDIO-007 | Modify template definition/version; load prior Blueprint | Pinned old template remains valid; no silent conversion to latest |
+| SC-STUDIO-008 | Build 6 equipment + 5 edges, Save → refresh browser → Reopen | PostgreSQL deep equality of graph, layout restored separately |
+| SC-STUDIO-009 | Two browser sessions save expectedRevision=N | One success; other sees 409 and explicit reload/compare option; no data loss |
+| SC-STUDIO-010 | Move nodes + zoom only, save layout | Engineering revision unchanged, Impact empty, new layoutVersion persisted |
+| SC-STUDIO-011 | Broken Boundary / unknown port | Visible console code + click highlights exact unit/equipment/port |
+| SC-STUDIO-012 | Plant with 99 units, 64 transfers and shared compressor, open L037 | Only L037 internal nodes loaded to active Canvas; Overview still shows all units |
+| SC-STUDIO-013 | Start virtual preview and inspect pump status | Clearly SIMULATED, reproducible seed; no PLC client/command in network logs |
+| SC-STUDIO-014 | Viewer tries save / Editor tries Publish / Publisher tries edit other site | All unauthorized denied by server; roles not trusted from client payload |
+| SC-STUDIO-015 | Overview: change shared resource, inspect affected units | Accurate Impact IDs + reason path; no graph flattening of 99 line interiors |
+| SC-STUDIO-016 | Hydroponic feedback draft versus qualified small plant | Hydroponics can Save DRAFT, `RECIRCULATION_UNQUALIFIED` blocks Publish; plant uses catalog verified templates |
+| SC-STUDIO-017 | Corrupted local cached draft + existing server version | Recovery UI, local error preserved for export; never overwritten by sample diagram |
+| SC-STUDIO-018 | Delete connected equipment / undo / redo | Dependency confirmation, no orphan edge, all reversible before Save |
+| SC-STUDIO-019 | Playwright Chromium: create→connect→save→reopen→validate + negative auth | Runs on CI against actual backend/Testcontainers Postgres, screenshots on failure |
+| SC-STUDIO-020 | Large diagram editing, keyboard and color-blind usability | Time-to-interaction + FPS/long-task samples recorded; no arbitrary unmeasured SLA; keyboard selection and non-color diagnostics |
+
+### 22.8 Implementation stages and gates (only `main`)
+
+**R0.6A — Contract / secure backend bridge:** domain DTOs; typed error mapping; Catalog/Blueprint/Validation/Layout read/write APIs; server Editor permission; new JPA view-state table and service; independent API security tests; HTTP requests still denied until configured identity. Migrations remain JPA update in DEV and validate in PROD, no Liquibase. Keep GitHub CI green per increment.
+
+**R0.6B — Minimum useful React Studio:** `frontend/`, @xyflow/react MIT, TypeScript, Vite, exact equipment bindings from API, Project Explorer/Palette/Canvas/Inspector/Diagnostics, Save/Reopen and basic template. **Do not copy old R0.1 `domain.ts` as authoritative registry.** Port UI glyph SVGs and styles only after replacing old type semantics. No 3D, no global canvas for 99 interiors.
+
+**R0.6C — Trust / usability:** independent presentation layout CAS, Undo/Redo, corrupted-cache recovery, exact diagnostics, 99-unit Overview, optimistic-concurrency UX, Playwright/visual smoke, compare revisions. Test real browser against actual Java backend, not mocks only.
+
+**R0.6D — Virtual HMI preview:** separate derived projection for pump/valve/tank and simulation status, banner VIRTUAL, no PLC calls. Engineering draft remains separate from runtime; publish/activate managed only by approved server lifecycle. No claim of production SCADA from R0.6.
+
+**Definition of Done (first usable product):** engineer without editing JSON can create, connect, validate, save and reopen one hydroponic DRAFT and one small manufacturing LINE; after restart/reload physical graph and screen positions survive; wrong port never qualifies; 99-unit Overview remains usable; unauthorized API write denied; 409 handled with no lost edits; virtual state never represented as physical telemetry; `main` frontend/backend CI and browser E2E PASS on exact SHA.
+
+**Out of scope:** game-level Blueprint scripting, user code execution, 3D CAD, actual PLC write, AI/ML INT-001…008, MES scheduling, real-time certified control, collaborative CRDT editing and microservices. Keep separate Future Design topics; do not block R0.6 delivery.
