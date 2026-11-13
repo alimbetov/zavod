@@ -25,7 +25,10 @@ public final class TelemetryContracts {
             Objects.requireNonNull(sourceKind);Objects.requireNonNull(staleAfter);
             requireText(siteId);requireText(unitId);requireText(equipmentId);requireText(signalKey);
             EngineeringUnits.require(unitCode);
-            if(blueprintRevision<1||staleAfter.isNegative()||staleAfter.isZero()
+            // The database stores staleness in milliseconds. A positive
+            // sub-millisecond duration would round to zero and become invalid
+            // or silently disable expiry when the mapping is reloaded.
+            if(blueprintRevision<1||staleAfter.toMillis()<1
                     ||staleAfter.compareTo(Duration.ofDays(7))>0)
                 throw new IllegalArgumentException("INVALID_SIGNAL_DEFINITION");
         }
