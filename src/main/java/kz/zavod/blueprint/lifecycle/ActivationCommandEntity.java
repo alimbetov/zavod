@@ -25,6 +25,7 @@ public class ActivationCommandEntity {
         this.id=id;this.siteId=siteId;this.commandKey=commandKey;this.actorId=actorId;
         this.payloadHash=payloadHash;this.resultSetId=resultSetId;this.createdAt=Instant.now();
     }
+    public String siteId(){return siteId;}
     public String actorId(){return actorId;}
     public String payloadHash(){return payloadHash;}
     public String resultSetId(){return resultSetId;}
