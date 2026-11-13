@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import kz.zavod.blueprint.domain.ProcessBlueprint;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -17,23 +18,41 @@ import java.util.UUID;
 public class BlueprintDraftService {
     public static final String SCHEMA_VERSION="blueprint.v1";
     private final BlueprintRevisionRepository repository;
+    private final BlueprintHeadRepository headRepository;
     private final ObjectMapper objectMapper;
 
-    public BlueprintDraftService(BlueprintRevisionRepository repository,ObjectMapper objectMapper) {
-        this.repository=repository;this.objectMapper=objectMapper;
+    public BlueprintDraftService(BlueprintRevisionRepository repository,BlueprintHeadRepository headRepository,
+                                 ObjectMapper objectMapper) {
+        this.repository=repository;
+        this.headRepository=headRepository;
+        this.objectMapper=objectMapper;
     }
 
     /** Optimistic revision sequence: expectedPreviousRevision=0 for a new blueprint. */
     @Transactional
     public void saveDraft(ProcessBlueprint snapshot,long expectedPreviousRevision) {
         Objects.requireNonNull(snapshot);
-        long latest=repository.findTopByBlueprintIdOrderByRevisionNoDesc(snapshot.id().toString())
-                .map(BlueprintRevisionEntity::revisionNo).orElse(0L);
-        if(latest!=expectedPreviousRevision||snapshot.revision()!=latest+1)
-            throw new IllegalStateException("STALE_BLUEPRINT_REVISION");
+        if(snapshot.revision()!=expectedPreviousRevision+1 || expectedPreviousRevision<0)
+            throw new BlueprintRevisionConflict("expected="+expectedPreviousRevision+" next="+snapshot.revision());
         String json=serialize(snapshot);
-        repository.saveAndFlush(new BlueprintRevisionEntity(UUID.randomUUID().toString(),snapshot.id().toString(),
-                snapshot.revision(),SCHEMA_VERSION,sha256(json),json));
+        String id=snapshot.id().toString();
+        if(expectedPreviousRevision==0) {
+            try {
+                headRepository.saveAndFlush(new BlueprintHeadEntity(id,1));
+            } catch(DataIntegrityViolationException ex) {
+                throw new BlueprintRevisionConflict("Blueprint head already exists: "+id,ex);
+            }
+        } else {
+            int advanced=headRepository.compareAndAdvance(id,expectedPreviousRevision,snapshot.revision());
+            if(advanced!=1)throw new BlueprintRevisionConflict(
+                    "Blueprint="+id+" expected="+expectedPreviousRevision);
+        }
+        try {
+            repository.saveAndFlush(new BlueprintRevisionEntity(UUID.randomUUID().toString(),id,
+                    snapshot.revision(),SCHEMA_VERSION,sha256(json),json));
+        } catch(DataIntegrityViolationException ex) {
+            throw new BlueprintRevisionConflict("Duplicate revision for Blueprint="+id,ex);
+        }
     }
 
     @Transactional(readOnly=true)
