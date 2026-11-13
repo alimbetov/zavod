@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 import java.util.Objects;
+import org.slf4j.MDC;
 import java.util.UUID;
 import kz.zavod.blueprint.persistence.BlueprintDraftService;
 import kz.zavod.blueprint.persistence.BlueprintRevisionRepository;
@@ -41,13 +42,18 @@ public class BusinessTransitionLedger {
         long sequence=previous.map(p->p.sequenceNo()+1).orElse(1L);
         String previousHash=previous.map(BusinessTransitionEntity::eventHash).orElse("");
         String eventId=UUID.randomUUID().toString();
+        String reasonCode=type.name()+"_TRANSITION";
+        // Prefer trusted request correlation when supplied; otherwise mint server-side ID.
+        String supplied=MDC.get("correlationId");
+        String correlationId=(supplied!=null&&!supplied.isBlank()&&supplied.length()<=128)
+                ?supplied:eventId;
         Instant at=Instant.now().truncatedTo(ChronoUnit.MICROS);
         String eventHash=fingerprint(eventId,siteId,Long.toString(sequence),type.name(),actor,
                 blueprintId,Long.toString(revision),previousSetId,newSetId,reason,
-                commandKey,contentHash,previousHash,at.toString());
+                commandKey,reasonCode,correlationId,contentHash,previousHash,at.toString());
         events.saveAndFlush(new BusinessTransitionEntity(eventId,siteId,sequence,type,
                 actor,blueprintId,revision,previousSetId,newSetId,reason,commandKey,
-                contentHash,previousHash,eventHash,at));
+                reasonCode,correlationId,contentHash,previousHash,eventHash,at));
     }
 
     @Transactional(readOnly=true)
@@ -60,7 +66,7 @@ public class BusinessTransitionLedger {
             String calculated=fingerprint(event.id(),event.siteId(),Long.toString(event.sequenceNo()),
                     event.eventType().name(),event.actorId(),event.blueprintId(),
                     Long.toString(event.revisionNo()),event.previousSetId(),event.newSetId(),
-                    event.reason(),event.commandKey(),event.contentHash(),
+                    event.reason(),event.commandKey(),event.reasonCode(),event.correlationId(),event.contentHash(),
                     event.previousEventHash(),event.createdAt().toString());
             if(!event.siteId().equals(siteId)||!calculated.equals(event.eventHash()))
                 throw new IllegalStateException("BUSINESS_LEDGER_HASH_MISMATCH");
