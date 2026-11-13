@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
-const catalog=JSON.parse(readFileSync(new URL('../../../docs/design/ux-99-variants.json',import.meta.url),'utf8'));
+const catalog=JSON.parse(readFileSync(new URL('../../docs/design/ux-99-variants.json',import.meta.url),'utf8'));
 test('exactly 99 distinct role/layout/lens variations',()=>{
   assert.equal(catalog.variants.length,99);
   assert.equal(new Set(catalog.variants.map(x=>x.role+'|'+x.layout+'|'+x.lens)).size,99);
