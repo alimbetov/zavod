@@ -1,0 +1,43 @@
+name: react-studio-rs0
+on:
+  pull_request:
+    paths:
+      - 'web/**'
+      - 'docs/design/**'
+      - '.github/workflows/react-studio-rs0.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'web/**'
+      - 'docs/design/**'
+      - '.github/workflows/react-studio-rs0.yml'
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned frontend dependencies
+        run: npm install --no-audit --no-fund
+      - name: Unit contracts
+        run: npm test
+      - name: Typecheck and production build
+        run: npm run build
+      - name: Install headless Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Browser role/layout/lens smoke
+        run: npm run test:e2e
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: react-studio-browser-evidence
+          path: web/test-results
+          retention-days: 7

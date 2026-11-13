@@ -2734,3 +2734,251 @@ Secrets, certificates and remote maintenance access must follow the enterprise O
 6. Затем — read-only Edge, HMI, MES. ML и облачная аналитика пока не должны вытеснять первый успешный сценарий.
 
 **Release verdicts должны различаться:** LAB ENGINEERING QUALIFIED; PILOT READY READ ONLY; OT SITE COMMISSIONED; PRODUCTION CONTROL QUALIFIED. Первая квалификация не означает последнюю.
+
+
+---
+
+## 31. RS-0…RS-5 — React Studio Engineering Workspace: six killer features (2026-11-13)
+
+**Статус:** ТЗ / implementation in progress, NOT product-qualified. Единый нормативный документ — этот мастер-ТЗ. Текущий REST `dev-local` не является production API и не должен открываться в недоверенную сеть. Права, публикация и активация остаются серверными. Инженерная активация НЕ управляет PLC, HMI не изображает реальные сигналы без аттестованного источника. Ссылки на OT-0 (§26), BCQ-G4 (§29–30) и отдельный React E2E Issue #9 — обязательные зависимости.
+
+### 31.1 Пользователи, целевая работа и фокус
+
+**ICP:** инженер-технолог, инженер АСУ ТП, главный инженер/рецензент и администратор площадки. **Первый рабочий профиль:** `batch.concrete.v1` на одном заводе. Площадка может иметь несколько LINE, CIRCUIT, ZONE, STATION. **Нельзя ограничивать Canvas одной линией**. Линии могут быть независимыми или связанными посредством `Transfer` (типизированный физический поток), `Dependency` (порядок/влияние) и `SharedAsset + ResourceUse` (общий ресурс). Layout не входит в инженерный хеш ревизии, сохраняется отдельно с CAS и не может изменить SignalBinding.
+
+**North Star:** Create site/project → выбрать бетонный шаблон → создать несколько взаимозависимых линий → связать типизированные порты и границы → задать паспортные параметры → Validate/Guardian → Save & Reopen → X-Ray и Change Impact → независимое Approve/Publish/Activate → Restore known-good → read-only HMI preview. Публикация/активация доступны только после соответствующих BCQ-G4 security, audit, idempotency и recovery gates.
+
+### 31.2 UX / дизайн-система
+
+**Компоновка desktop-first:** слева Catalog + дерево площадки/линий, центр масштабируемый React Flow Canvas, справа Engineering Inspector (объект/порты/физические свойства/привязки), внизу раскрываемая панель Guardian + Change Timeline. Верхняя строка: site, project, revision, DRAFT/APPROVED/PUBLISHED/REVOKED, dirty/saved/conflict, number of blocking findings, user and role. Поддержать RU/KK/EN и длинные переводы. Светлая/тёмная темы и доступный контраст; цвет никогда не является единственным индикатором статуса.
+
+**Два UI-режима над одним серверным Blueprint:** Guided (шаблоны/шаги/минимум контролов) и Engineering (полная палитра, boundary/transfer/dependency/resource inspector). Смена режима не меняет модель, права, сохранение и validation. Узлы линии визуально группируются; boundary порты визуально отделены от внутренних equipment ports. FlowKind MATERIAL / ITEM_FLOW / UTILITY / INSTRUMENT показывать через легенду с формой и текстом, не только цветами. Support pan/zoom, minimap, fit, keyboard, multi-select, undo/redo in local draft, screen-reader labels, visible loading/error/retry.
+
+**Сохранение:** серверное сохранение Blueprint только с expectedRevision CAS и независимое сохранение layout with expectedLayoutVersion. Просроченный revision — конфликт с compare/reload, не silently overwrite. Autosave можно вводить только после тестов идемпотентности/конкурентности; explicit Save обязательно в R1. DRAFT допускает незавершённый граф, но publish preflight fail-closed.
+
+### 31.3 Шесть feature contracts
+
+| ID | Feature | P | Серверный источник истины | Критерий приёмки |
+|---|---|---|---|---|
+| RS-K1 | **Smart Plant Builder** | P0 | `EquipmentCatalog` + `GuidedBlueprintBuilder` + site policy | Создать 3+ связанные BATCH линии без ручного JSON, типизированные boundary/transfer, immutable draft preview; engineer approves saving |
+| RS-K2 | **Engineering X-Ray** | P0 | `BlueprintImpactAnalyzer`, `ProcessBlueprint`, validation | Выбор unit/equipment подсвечивает input/output, upstream/downstream, SharedAsset, affected units и confidence; нет вымышленных физических влияний |
+| RS-K3 | **Engineering Guardian** | P0 | `BlueprintValidator`, `BlueprintReadiness`, `ExplainableValidation` | Диагностика с stable code/severity/entity/problem/consequence/action и deep link; fixes preview→diff→explicit confirm; до confirmation snapshot не меняется |
+| RS-K4 | **Change Time Machine** | P0 (after G4) | persisted revision/hash, lifecycle states, authoritative audit ledger | Сравнить rev N→M, показать added/removed/changed, impact и подтверждённого автора; Restore создаёт новый ActivationSet, revoked target blocked, CAS enforced |
+| RS-K5 | **One-Click HMI Preview** | P1 | `HmiPreviewGenerator` + server-owned published selection | Отдельный read-only экран только для PUBLISHED, `live=false`, `UNKNOWN_NO_TELEMETRY`, не допускает PLC write |
+| RS-K6 | **Integration Ready View** | P1 (after OT-0) | InstalledAsset, SignalDefinition, SignalBinding, source quality & config version | Signal mappings versioned independently; pending/unbound labels, simulated != physical, no fabricated timestamp or reading, no direct browser-to-PLC |
+
+**K1 первая реализация:** `GuidedBlueprintBuilder.concreteStarter` формирует 3 структурные LINE: aggregate feed → mixing, cement feed → mixing. Два `Transfer` по MATERIAL и один SharedAsset `plant-power`. Дозирование воды и mixer/discharge находятся в mixing unit. Каждая линия `batch.concrete.v1` и не считается физически квалифицированной. Данный starter — *структурная гипотеза* для редактирования, а не утверждённый технологический рецепт, material balance или реальная спецификация мощности. 3 активные LINE требуют serverMaxActiveLines >=3; DRAFT не должен быть ограничен лимитом активных.
+
+**X-Ray dependencies:** отдельно отображать прямые и транзитивные входы/выходы; `Transfer` и `Dependency` не смешивать, группировать shared resource affected peers без O(n²) materialization всех пар. Помечать неподтверждённые process physics claims. Влияния между площадками не изобретать. При смене выбранного элемента сохранять user viewport.
+
+**Guardian:** `ERROR` (publication blocker), `WARNING` (needs review), `UNQUALIFIED` (lack of physical evidence). `physicallyQualified=false` в существующем Golden Model сохраняется, пока профиль процесса не прошёл независимую инженерную аттестацию. Указывать precise path `unit/equipment/port`; автоматически применяемые предложения без Preview и пользовательского согласия запрещены. Сервер перепроверяет все edits, клиентское состояние не доверенное.
+
+**Time Machine:** обязательны explicit actor, reason, UTC, site, blueprint/revision/hash, correlationId, expectedRevision/expectedPointer. Показывать `NOT_RECORDED` до production-identity/audit, никогда не выдумывать автора. Approval≠Publication≠Active state, Revoked not restorable; rollback инженерной конфигурации не отменяет физический run.
+
+### 31.4 Backend / Frontend architecture
+
+Frontend: React + TypeScript + React Flow; typed API client + domain view models, TanStack Query допустим для remote server state, Zustand/Redux необязателен для local canvas selection. Серверные значения revision, role, publication state, warnings and audit **не кешировать как authority** в браузере; invalidate after mutation. Shape of UI graph is a projection: Node/Edge IDs deterministic, no mutation of immutable Blueprint object via Canvas reordering. Canvas position changes persist in layout schema only, not Blueprint engineering snapshot. No fake PLC status.
+
+Backend already has `ProcessBlueprint`, `BlueprintValidator`, `BlueprintImpactAnalyzer`, `ExplainableValidation`, `EngineeringChangeManagement`, `HmiPreviewGenerator`. Extend via bounded DTO endpoints, site ownership and ETags/revision CAS; prefer existing modular monolith rather than new microservices. Dev-only concrete endpoint: `GET /api/v1/sites/{siteId}/blueprints/{blueprintId}/guided/concrete?unitPrefix=CP01`; only for empty Blueprint; generates non-persisted next revision; user must explicitly save. Production endpoints gated on trusted identity, role and idempotency; not through dev header alone.
+
+### 31.5 Multi-line behavior and negative cases
+
+- `Transfer` must join explicit compatible source OUT/target IN boundaries; no direct cross-unit reference to private equipment port.
+- A required transfer peer cannot be excluded from an activated subset when another peer is selected; `INACTIVE_TRANSFER_PEER` blocks.
+- `Dependency` graph cycles fail structural validation; shared resources validate EXCLUSIVE conflicts and sum of selected SHARED_CAPACITY demands.
+- Deleting equipment/line requires dry-run impact with downstream units, missing boundary/ports and shared resource consumers; user confirmation + server CAS.
+- Two simultaneous engineers editing same Blueprint must see `409`/revision conflict instead of silent lost update.
+- Missing incoming cement/aggregate or missing required mixer connection blocks publication; disconnected DRAFT can still be saved.
+- Revoking current active publication is blocked until replacement; restoring a revoked publication is blocked; historical ActivationSets stay immutable.
+- Layout-only change never changes revision hash, approved selection or temporal SignalBinding.
+
+### 31.6 Delivery stages and acceptance
+
+| Stage | Scope | Exit gate |
+|---|---|---|
+| RS-0 | React app scaffold, site/project navigation, palette/inspector, typed API, stable node IDs | Build/lint, browser smoke, site isolation, load/error/empty states |
+| RS-1 | Concrete three-line guided template, typed cross-line Canvas, Save/Reopen and separate Layout CAS | JUnit RED→GREEN core; PostgreSQL API E2E and Chromium save/reopen; no manual JSON |
+| RS-2 | X-Ray/Guardian, diff preview and explicit fixes | negative topology/fault oracles, no unconfirmed mutation, affected-line UI screenshots |
+| RS-3 | Time Machine, actor/reason and approval/publish/restore workflow | BCQ-G4 passed; PostgreSQL audit, idempotency and restart proofs |
+| RS-4 | HMI read-only and Integration Ready View | OT-0 contracts; UNKNOWN quality, simulator marking, no PLC write |
+| RS-5 | Independent engineer pilot | 5 interviews, 3 observed tasks, >=90% task completion target, documented engineering correctness and errors |
+
+### 31.7 Test-first scenario register
+
+| ID | Scenario / oracle |
+|---|---|
+| RS-001 | Concrete starter returns 3 distinct LINE units, 2 typed transfers, shared resource; profile-key `batch.concrete.v1` |
+| RS-002 | Starter passes **structural** Catalog/BlueprintReadiness, but `physicallyQualified=false`; no physical safety claim |
+| RS-003 | Removing a required cement-in binding blocks publication with `MISSING_REQUIRED_PORT` |
+| RS-004 | Activating mixing unit without feed lines returns `INACTIVE_TRANSFER_PEER` |
+| RS-005 | Server active-line quota of 2 blocks selection of 3 lines, but not DRAFT storage |
+| RS-006 | Invalid unitPrefix/path traversal rejected; no automatic persistence of guided draft |
+| RS-007 | Reopening saved graph restores exact stable IDs/transfers and independent layout positions |
+| RS-008 | Two editors race on expectedRevision; exactly one save wins |
+| RS-009 | X-Ray shows only actual upstream/downstream and SharedAsset users; no cross-site info |
+| RS-010 | Guardian error click focuses relevant unit/port; preview fix does not change state before confirmation |
+| RS-011 | Rev diff reports removed dependency and affected peer; actor/reason from ledger or explicitly unavailable |
+| RS-012 | Revoked publication cannot restore; history count advances for successful known-good restore |
+| RS-013 | HMI uses only published selection, live=false, UNKNOWN_NO_TELEMETRY and no device write |
+| RS-014 | Integration binding lifecycle independent of canvas layout; SIMULATED never labeled PHYSICAL |
+| RS-015 | Real browser Save→Close→Reopen passes with PostgreSQL and screenshot evidence, no manual SQL |
+
+**Release safety:** BCQ-G4 remains production gate; RS-0/RS-1 may be implemented under dev-local while not marketed as deployable enterprise multiuser app. Independent concrete domain expert must qualify material balance, actual physical quantities and site safety before any real commissioning.
+
+
+
+### 31.8 RS-K7 — Associative SVG Component System & Semantic Plant Mimic (proposal)
+
+**Product differentiator:** Canvas objects are not generic rectangular cards. Render equipment as recognizable, *semantic* SVG symbols: concrete silo, aggregate bin, belt conveyor, scales, mixer, pump, valve, tank, temperature/pressure sensor, discharge. A symbol is a pure visual projection of a version-pinned `EquipmentType` and `EquipmentInstance`; never generate engineering authority by parsing SVG.
+
+**Component registry contract:** `symbolKey + symbolVersion + equipmentTypeKey + compatibleCatalogVersions + viewBox + namedAnchors + supportedStates + accessibilityLabel`. SVG must be deterministic, sanitized, no executable markup or external URLs, no arbitrary HTML or user-uploaded SVG without review. Preserve stable node IDs; anchor positions correspond to `Port` keys and `Boundary` contracts. Connections route through semantically typed anchors, including inter-unit `Transfer`, and scale with pan/zoom. Allow replacing an SVG theme without modifying Blueprint revision or temporal SignalBinding. Use simple reusable symbols under `web/src/components/plant-symbols/`; do not place large raw SVG source in Blueprint JSON.
+
+**Associative/nested composition:** `Equipment → ProcessUnit → Line Group → Zone/Area → Site`. Group or collapse a line without removing equipment or dependencies; highlight attached upstream/downstream lines and shared resources via Engineering X-Ray. Support reusable `SubassemblyTemplate` (e.g. dosing station = scale+doser+valve) with local IDs namespaced on insertion and mapping validation. A reusable component is an editable composition, not hidden nested PLC control logic. Show both top-down process overview and equipment detail using the same immutable source model.
+
+**Generator candidates (future opt-in):** `SVG Symbol Generator` from trusted catalog metadata and vetted primitives, with templates for silo/tank/pump/conveyor/mixer. Generation produces icon geometry and port anchor layout only, not safety setpoints, physical drawings, P&ID compliance, material properties or engineering rules. Generated assets must pass static sanitization, port-coverage and snapshot rendering tests.
+
+### 31.9 RS-K8 — Observed Equipment State Overlays (read-only)
+
+**Separate three independent dimensions, never merge them into one enum:** (1) engineering lifecycle `DRAFT/APPROVED/PUBLISHED/ACTIVATED/REVOKED`; (2) observed operating state `INACTIVE/STARTING/RUNNING/WARNING/ALARM` from trusted state bindings or explicitly qualified rules; (3) signal freshness/provenance `GOOD/UNCERTAIN/BAD/STALE/OFFLINE/UNKNOWN` + `PHYSICAL/SIMULATED/IMPORTED`. No operating status may be derived from Blueprint `ACTIVATED`: this only selects engineering config, never proves actual machinery runs.
+
+| Operating state | Recommended rendering | Required evidence |
+|---|---|---|
+| INACTIVE | Gray #64748b, paused icon | A trusted state signal explicitly reports stopped; not simply missing telemetry |
+| STARTING | Light green #86efac, slow pulse + starting label | Trusted state reports transition to starting; no optimistic fake start after engineer clicked |
+| RUNNING | Green #16a34a, stable ring + running label | Qualified current state signal or site-authorized derived rule |
+| WARNING | Amber #f59e0b, warning triangle | Source-qualified non-safety deviation, with rule and affected signal evidence |
+| ALARM | Red #dc2626, distinct critical icon + alarm text | Trusted OT alarm or separately approved application alarm rule; not assumed to replace PLC safety alarms |
+| UNKNOWN | Neutral outlined/hatched state + '?' | No binding, no valid state source, or quality unknown |
+| OFFLINE / STALE | Neutral outline with crossed link / clock + age | Transport disconnected or data older than freshness limit; prior RUNNING must **not** remain visually current |
+
+**Priority rule:** stale/offline/unknown provenance overrides any implied current green/red operating status; raw last-known reading can be displayed only as historical with timestamp. Alarm history can remain visible but distinctly marked `last known` until fresh evidence. WARNING and ALARM may overlap with STARTING/RUNNING, so record `operatingPhase` separately from `alarmSeverity`; overlay severity on base phase when quality=GOOD. Always render icon/text/shape as well as color, meeting accessibility contrast. Limit motion, support reduced-motion preferences, avoid flashing alarms by default.
+
+**Sources:** virtual lab uses SIMULATED watermark globally and per-value; PHYSICAL only from authenticated, approved, time-valid `SignalBinding` via Edge ingestion; no manual browser ability to switch provenance to PHYSICAL. No direct browser-to-PLC connection and no PLC commands. Live status can be implemented only after OT-0/OT-3 acceptance; before then display a static `UNKNOWN_NO_TELEMETRY` HMI with clearly labelled simulated demo overlay if enabled.
+
+### 31.10 RS-K9 — Focus Inspector with live/historical trends
+
+**Interaction:** select equipment or its sensor symbol → right-side resizable Inspector (mobile: bottom sheet), with (a) equipment name/type/stable ID/line, (b) engineering properties and source evidence, (c) independent operating phase, alarm, freshness, source and last update, (d) signal cards: temperature °C, pressure bar, flow m³/h, speed RPM, energy kW etc **only if mapped and dimensionally compatible**, (e) graph with multiple series and thresholds, (f) Event/Alarm Timeline, (g) X-Ray upstream/downstream and affected shared resources, (h) revision/maintenance history.
+
+Charts: selectable 5m/1h/24h/7d; UTC evidence storage and site-local display; show source event time, ingest time, sampling interval, quality gaps, uncertain/bad points, timezone, approved sensor provenance, read-only setpoint/limit reference *only if trustworthy*. Do not interpolate or zero-fill missing values by default. For high cardinality use bounded queries, server-side downsampling preserving maxima/minima and alarm peaks; test gap and retention behavior. Overlay process phases (STARTING/RUNNING/etc.) as an independent band only when state source is trustworthy; never calculate them from single noisy temperature reading without separately approved classification.
+
+**Example:** focusing mixer `MX-101` highlights cement+aggregate+water inputs, displays current state badge with provenance, temperature trend and mixing phase timeline if sensors exist; disconnected equipment shows UNKNOWN and `No qualified telemetry binding`, not a false normal temperature.
+
+### 31.11 Extra candidate killer features (after first E2E)
+
+1. **Process Replay / Time Travel:** read-only synchronized replay of recorded PHYSICAL historian data and revisions, with exact site/binding validity and visible replay watermark; no simulation-to-live confusion.
+2. **Process Heatmap:** layer parameter overlays (temperature, throughput, energy) across graph, with unit-aware legend, no implicit normalization across incompatible dimensions.
+3. **Dependency Pulse:** on warning or downtime, X-Ray highlights *potentially* affected downstream lines and shared assets; distinguishes modeled dependency from proven physical causal fault.
+4. **Digital Equipment Passport:** a selectable node has version-pinned type, installed asset history, commissioning/maintenance evidence, linked sensors and change timeline, without fabricating data.
+5. **Split-Screen Compare:** side-by-side revision compare or current-vs-replay, identical viewport synchronization and visual semantic diff.
+6. **Scenario Sandbox:** engineer branches a DRAFT and evaluates impact/structural preflight without changing ACTIVE pointer, no production commands.
+
+**Priority:** RS-K7 SVG component registry belongs RS-0/RS-1; RS-K8 state overlays and RS-K9 Inspector UI may be scaffolded using UNKNOWN placeholder in RS-1, but PHYSICAL status/trend ingestion is strictly after OT qualification. Process Replay/heatmap are P2 until Historian exists.
+
+### 31.12 Acceptance additions for visual status and component generator
+
+| ID | Oracle |
+|---|---|
+| RS-016 | Every supported EquipmentType symbol exposes stable matching typed `Port` anchors and avoids dangling connections when collapsed |
+| RS-017 | SVG symbol registry denies script/external href and invalid generated geometry; no SVG markup stored as engineering authority |
+| RS-018 | Changing symbol theme/layout does not change Blueprint snapshot/hash, approval, source bindings |
+| RS-019 | Unknown or missing telemetry never renders INACTIVE, RUNNING, WARNING or ALARM as a *current* observation |
+| RS-020 | STARTING light green and RUNNING green differ by icon/text/motion, also accessible without color or animation |
+| RS-021 | Stale and OFFLINE override last-known RUNNING indicator, show last sample timestamp; no invented values |
+| RS-022 | WARNING/ALARM overlay retains separate operating phase, quality and authorized alarm source |
+| RS-023 | Focused equipment only shows mapped dimensionally compatible temperature/pressure/flow signals and provenance |
+| RS-024 | Timeline shows quality gaps and out-of-order timestamps without silent interpolation |
+| RS-025 | Graph keeps max/min/alarm peaks under downsampling and never joins another site's data |
+| RS-026 | SIMULATED replay is visibly marked and cannot become PHYSICAL by modifying an HTTP payload |
+| RS-027 | Nested group collapse/expand preserves equipment IDs, transfers, selected node and saved viewport |
+
+---
+
+## 32. UX-99 — комбинаторная лаборатория рабочих мест и инженерных сценариев (proposal, 2026-11-13)
+
+**Статус: DESIGN RESEARCH / TEST DESIGN, не реализованный React UI и не измеренная эргономика.** Обязательные определения состояния, качества, provenance и запрета PLC write из §26/31 сохраняются без изменений. Этот раздел — единственный нормативный контракт UX-99; JSON-каталог `docs/design/ux-99-variants.json` — производный материал для прототипирования, а не альтернативное ТЗ.
+
+### 32.1 Почему 99, а не 99 случайных цветовых тем
+
+**Ровно 99** = **3 рабочие роли × 3 информационные композиции × 11 смысловых линз**:
+- Роли: ENGINEER (проектирование/Guardian/X-Ray), OPERATOR (наблюдение/качество/производственные события), REVIEWER (diff/impact/evidence/approve).
+- Композиции: FOCUS (одна главная задача, широкая схема), SPLIT (схема + контекстный Inspector), OVERVIEW (дерево площадки/нескольких линий + сводка).
+- Линзы: TOPOLOGY, DEPENDENCY, TEMPERATURE, FLOW, ENERGY, MAINTENANCE, QUALITY, BATCH, CHANGE, RESOURCE, SIGNAL.
+- Светлая, тёмная и высококонтрастная темы **ортогональны 99 комбинациям** — пользовательские accessibility preferences, а не отдельные продукты. Переключение темы не меняет данные, семантику и права.
+
+Каждый вариант получает стабильный `ZV-001…ZV-099` и поля `role,layout,lens,score`. **score — заранее заданная эвристика для экспериментального ранжирования, а НЕ измеренное снижение когнитивной нагрузки**. Для release target требуется наблюдаемое пользовательское испытание.
+
+### 32.2 Пользовательские сценарии: job/task/outcome
+
+| ID | Роль | Job-to-be-done | Expected output / отрицательный путь |
+|---|---|---|---|
+| UX-001 | ENGINEER | Создать бетонный завод из 3 взаимосвязанных LINE с двумя MATERIAL Transfer и shared plant-power | Типизированный Canvas; Draft Save/Reopen; неверные порты отмечены Guardian |
+| UX-002 | ENGINEER | Выбрать mixer, посмотреть upstream/downstream/shared и паспортные свойства | X-Ray строго по сохранённому Blueprint; не утверждать доказанную физическую причинность |
+| UX-003 | ENGINEER | Заменить mixer/насос и предварительно проверить влияние | Preview Diff/Impact + подтверждение; ACTIVE не меняется автоматически |
+| UX-004 | ENGINEER | Удалить промежуточную линию | Показать сломанные transfer/dependency, заблокировать публикацию неполной версии |
+| UX-005 | ENGINEER | Редактировать тот же Blueprint в двух вкладках | CAS конфликт/409, сохранить локальные изменения для сравнения, без silent overwrite |
+| UX-006 | REVIEWER | Сравнить R2→R3 и узнать источник изменённых параметров | Side-by-side change dossier, точные evidence refs; неизвестный actor — `NOT_RECORDED` |
+| UX-007 | REVIEWER | Одобрить отличающегося авторами изменения и отклонить самопубликацию | Four-eyes; idempotent commands и journal после BCQ-G4; не обходить проверки |
+| UX-008 | REVIEWER | Вернуть известную публикацию по истории после неудачного изменения | Новый ActivationSet + CAS; REVOKED target отказ; без PLC write |
+| UX-009 | OPERATOR | За 10 секунд распознать нездоровый процесс на многострочном overview | Предупреждение отдельно от RUNNING, quality/freshness visible; тестируемое целевое время |
+| UX-010 | OPERATOR | Выбрать mixer и посмотреть температуру, расход, события за час | Контекстный Inspector, UTC и local timestamps, единицы и gaps; mock данные SIMULATED |
+| UX-011 | OPERATOR | Потеря связи с Edge, последнее значение 65°C/green | Немедленно показать OFFLINE/STALE и last-known timestamp, не оставлять «текущее RUNNING» |
+| UX-012 | OPERATOR | Сравнить concrete batch planned vs actual | Только при подтверждённых MES/весовых событиях; неизвестный факт не превращать в ноль |
+| UX-013 | SERVICE_ENGINEER | Найти InstalledAsset по SignalBinding, проверить регистрацию и источник | OT-0 provenance, no direct browser-to-PLC; не менять инженерный граф при изменении layout |
+| UX-014 | ENGINEER | Создать 99 LINE и открыть только выбранную L037 | Overview группирует units; детальный Canvas lazy-load; не рисовать все 853 узла |
+| UX-015 | OPERATOR | Выбрать внимание без постоянных анимаций и принудительного zoom | Auto Tour optional, pinned/manual focus, pause during editing, reduced motion |
+| UX-016 | ALL | Сменить тему, масштаб/язык RU/KK/EN и клавиатурой открыть диагностику | Логическая модель и идентификаторы неизменны; сохранён accessibility preference |
+
+### 32.3 Производственные сценарии и отображение процесса
+
+| ID | Plant process model | UI state flow | Обязательные данные и ограничения |
+|---|---|---|---|
+| SYS-001 | Concrete BATCH: aggregate+cement+water → weigh/dose → mix → discharge | `ORDERED → DOSING → MIXING → DISCHARGING → COMPLETE` как проектируемая MES-модель | BATCH_PHASE из квалифицированных событий, независимые source/actual dose, recipe version, UNKNOWN when unbound |
+| SYS-002 | Continuous PUMP: tank→pump→valve + pressure sensor | `STOPPED → STARTING → RUNNING` только при trusted state telemetry | Flow/pressure/temperature trends; no fabricated RUNNING from Engineering Activation |
+| SYS-003 | Multi-line shared utility: two feeder lines, mixing and common power | Resource load shown against configured capacity; highlight affected units | Business capacity gate and actual physical loading distinct; do not infer circuit protection |
+| SYS-004 | Line temporarily not selected for active engineering configuration | Show `not selected` engineering state separately from equipment operational state | No wrong claim that PLC is stopped |
+| SYS-005 | Alarm from real source + stale telemetry | Display last known alarm with aged provenance, new current state UNKNOWN/OFFLINE | Independent OT alarm remains authoritative, no suppression of critical safety alerts |
+| SYS-006 | Sensor missing/uncalibrated, incomplete batch evidence | explicit GAP/BAD/INSUFFICIENT_DATA rather than invented quantitative estimate | No zero-fill, retain source+ingest timestamps |
+| SYS-007 | Two linked lines impacted by revised port or deleted transfer | X-Ray affected graph + Change Impact and expected dependency block | Cross-line dependencies distinguish MATERIAL Transfer vs sequencing Dependency |
+| SYS-008 | Simulated HMI and future read-only OT | Explicit `SIMULATED` banner on all synthetic signals, read-only physical only after qualified Edge | Browser never controls PLC; no silent provenance switching |
+
+**Важная граница:** SYS-001 phase model — будущие MES события; current Blueprint/VirtualPlantSimulator не являются доверенным источником фактического состояния партии.
+
+### 32.4 Нагрузка на зрение и внимание — дизайн-инварианты
+
+- Не менее **4.5:1** контраста обычного текста, **3:1** крупных надписей/значимых графических элементов по WCAG 2.2 AA; высокий контраст как доступная персональная тема. Проверять контраст реально, не оценивать на глаз.
+- Один первичный action на рабочий экран, 1–2 уровня progressive disclosure; `FOCUS` скрывает второстепенные панели, `SPLIT` показывает контекст, `OVERVIEW` группирует линии.
+- Цветные сигнальные статусы только с иконкой, названием и provenance, никогда только цвет; состояние INACTIVE=серый только при подтверждении остановки; UNKNOWN/OFFLINE/STALE не подменять серым «выключено».
+- Для инженерного Canvas: спокойный нейтральный фон, ограниченное количество одновременно насыщенных цветов (смысловые связи, selection, warning, alarm). Не цветовать каждый агрегат в зелёный постоянно.
+- Нет мигающей анимации и auto-zoom в момент редактирования; поддержать OS reduced-motion, отказ от автоматической фокусировки, ручное закрепление объекта.
+- Графики: легенда, единица измерения, источник/quality, timestamp, gaps, версионные пороги; критические пики сохранять при downsampling. Не сравнивать температуры с расходом по общей оси без явной маркировки.
+- Текст/управление масштабируются 200%, клавиатурная навигация и осмысленный focus order, разные размеры мониторов и RU/KK/EN; status strip фиксирован и краток.
+- Большие площадки: progressive loading per-unit detail, overview только агрегаты/количество проблем; viewport не обязан показывать 99 линий в полной детализации.
+
+### 32.5 Отбор прототипов и испытания
+
+Экспериментальный heuristic score по `task fit, hierarchy, glanceability, cognitive load, grouping, safety clarity` служит только для приоритизации просмотра вариантов. **99 не означает 99 дорогих production-макетов.** Рекомендуется показать 99 автоматически конфигурируемых концептов, сделать экспертный первичный отсев до 9 и тестировать 3–5 финалистов на задачах из §32.2.
+
+**Кандидат на стартовые default:** ENGINEER+SPLIT+TOPOLOGY (редактор), OPERATOR+OVERVIEW+QUALITY (наблюдение), REVIEWER+SPLIT+CHANGE (согласование). Окончательный default устанавливается только по наблюдаемым результатам задач пользователей.
+
+Измерения: task completion, median/p90 time-to-find, число неверных кликов, число забытых проверок, misclassification of OFFLINE/ALARM, время обнаружения неверного Transfer, NASA-TLX или сходная субъективная оценка нагрузки, контрастный автоматический аудит и клавиатурная проверка. Для 99 вариантов нет валидных эмпирических метрик до испытаний. Проверять как минимум 3 разные роли отдельно, включая опытных инженеров бетонного процесса.
+
+### 32.6 Acceptance register UX-99 (design-to-test)
+
+| ID | Oracle |
+|---|---|
+| UX99-001 | Генератор формирует ровно 99 уникальных role×layout×lens комбинаций, IDs стабильны |
+| UX99-002 | Изменение темы или линзы не меняет authoritative Blueprint revision/hash, rights или signal provenance |
+| UX99-003 | Для каждого 99 варианта правильный основной task и видимая primary action |
+| UX99-004 | Focus переключает панели без потери выбранного оборудования и viewport |
+| UX99-005 | Оператор при STALE/OFFLINE не может перепутать историческое RUNNING с текущим |
+| UX99-006 | Все критические состояния различимы без цвета, анимации или звука |
+| UX99-007 | WCAG 2.2 AA contrast, zoom 200%, keyboard/focus, reduced-motion acceptance после реального браузерного теста |
+| UX99-008 | Multi-line overview 99 ProcessUnits не рендерит одновременно все вложенные equipment nodes |
+| UX99-009 | HMI не показывает PHYSICAL без server-approved qualified SignalBinding |
+| UX99-010 | Save→Close→Reopen не меняет Canvas IDs, layout CAS, revision и selected context |
+| UX99-011 | Per-role tasks UX-001…016 проходят наблюдаемые acceptance-сессии |
+| UX99-012 | Рейтинг UX не выдаётся за измеренную «95% эффективность» до полевых проверок |
+
+**Implementation order:** RS-0 React Workspace Shell + SVG Registry + configurable layout/theme → RS-1 three-line concrete graph → RS-2 Guardian/X-Ray → RS-3 trusted approval/change (BCQ-G4 gate) → RS-4 simulated read-only HMI/Inspector → empirical role-based UX testing → real telemetry only after OT-0…OT-3.
+
+References for human-centric criteria: W3C WCAG 2.2 (contrast, non-text contrast, use of color, text resize); Nielsen Norman Group progressive disclosure as a UX technique, not a guarantee of lower workload.

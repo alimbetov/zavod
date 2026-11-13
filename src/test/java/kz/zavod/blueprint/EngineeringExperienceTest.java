@@ -73,4 +73,56 @@ class EngineeringExperienceTest {
         assertTrue(preview.lines().get(0).equipment().stream()
                 .allMatch(x->x.state().equals("UNKNOWN_NO_TELEMETRY")));
     }
+
+    @Test void concreteStarterBuildsThreeDependentLinesAndFailsClosedOnPartialActivation() {
+        UUID id=UUID.randomUUID();
+        var concrete=GuidedBlueprintBuilder.concreteStarter(id,2,10,"CP01",catalog);
+        assertEquals(Set.of("continuous.pump.v1","batch.concrete.v1"),
+                GuidedBlueprintBuilder.templates());
+        assertEquals(3,concrete.units().size());
+        assertEquals(2,concrete.transfers().size());
+        assertEquals(1,concrete.sharedAssets().size());
+        assertEquals(9,concrete.units().stream().mapToInt(x->x.equipment().size()).sum());
+        assertTrue(BlueprintReadiness.blockers(concrete,catalog).isEmpty(),
+                BlueprintReadiness.blockers(concrete,catalog).toString());
+        var all=Set.of("CP01-AGG","CP01-CEM","CP01-MIX");
+        assertTrue(BlueprintPublicationGate.preflight(concrete,all,3,catalog).isEmpty());
+        assertTrue(BlueprintPublicationGate.preflight(concrete,Set.of("CP01-MIX"),3,catalog)
+                .stream().anyMatch(x->x.code().equals("INACTIVE_TRANSFER_PEER")));
+        assertTrue(BlueprintPublicationGate.preflight(concrete,all,2,catalog)
+                .stream().anyMatch(x->x.code().equals("ACTIVE_LINE_QUOTA_EXCEEDED")));
+        assertFalse(EngineeringGoldenModel.inspect(concrete,catalog).physicallyQualified());
+        assertThrows(IllegalArgumentException.class,
+                ()->GuidedBlueprintBuilder.concreteStarter(id,2,10,"../../other-site",catalog));
+    }
+
+    @Test void engineeringXRayTracesConcreteDependenciesWithoutInventingPhysics() {
+        var bp=GuidedBlueprintBuilder.concreteStarter(UUID.randomUUID(),2,10,"XR",catalog);
+        var mixer=EngineeringXRay.inspect(bp,"XR-MIX");
+        assertEquals(Set.of("XR-AGG","XR-CEM"),mixer.directUpstream());
+        assertEquals(Set.of("XR-AGG","XR-CEM"),mixer.upstream());
+        assertTrue(mixer.downstream().isEmpty());
+        assertEquals(Set.of("XR-AGG","XR-CEM"),mixer.sharedResourcePeers());
+        assertEquals(Set.of("plant-power"),mixer.sharedAssets());
+        var feeder=EngineeringXRay.inspect(bp,"XR-AGG");
+        assertEquals(Set.of("XR-MIX"),feeder.downstream());
+        assertThrows(IllegalArgumentException.class,()->EngineeringXRay.inspect(bp,"FOREIGN"));
+    }
+
+    @Test void missingConcreteInterlineTransferCannotBePublished() {
+        var initial=GuidedBlueprintBuilder.concreteStarter(UUID.randomUUID(),2,10,"CP02",catalog);
+        var mixing=initial.units().get(2);
+        var invalidMixing=new ProcessUnit(mixing.id(),mixing.kind(),mixing.profileKey(),
+                mixing.equipment(),mixing.connections(),
+                mixing.boundaries().stream().filter(x->!x.key().equals("cement-in")).toList(),
+                mixing.resources(),mixing.measurements(),mixing.recirculationAllowed());
+        var missing=new ProcessBlueprint(initial.id(),initial.revision(),10,
+                List.of(initial.units().get(0),initial.units().get(1),invalidMixing),
+                initial.sharedAssets(),List.of(initial.transfers().get(0)),initial.dependencies());
+        var blockers=BlueprintReadiness.blockers(missing,catalog);
+        // Removing the cement feed boundary leaves the required mixer port
+        // disconnected; publication must refuse the incomplete physical path.
+        assertTrue(blockers.stream().anyMatch(x->x.code().equals("MISSING_REQUIRED_PORT")),
+                blockers.toString());
+    }
 }
