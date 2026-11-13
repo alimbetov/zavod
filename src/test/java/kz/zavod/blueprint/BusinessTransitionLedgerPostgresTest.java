@@ -83,6 +83,12 @@ class BusinessTransitionLedgerPostgresTest {
         assertEquals(1,rows.stream().map(BusinessTransitionEntity::contentHash).distinct().count());
         assertEquals(3,rows.stream().map(BusinessTransitionEntity::eventHash).distinct().count());
         ledgerVerifier.verifySite(f.site());
+        for (var event:rows) {
+            assertNotNull(event.correlationId());
+            assertFalse(event.correlationId().isBlank());
+            assertEquals(event.eventType().name()+"_TRANSITION",event.reasonCode());
+            assertEquals(64,event.contentHash().length());
+        }
         assertEquals(0,rows.get(0).previousEventHash().length());
         assertEquals(rows.get(0).eventHash(),rows.get(1).previousEventHash());
         assertEquals(rows.get(1).eventHash(),rows.get(2).previousEventHash());
@@ -126,6 +132,11 @@ class BusinessTransitionLedgerPostgresTest {
         assertEquals(restored,rows.get(6).newSetId());
         assertEquals("Rollback to known configuration",rows.get(6).reason());
         assertEquals("Unsafe for deployment",rows.get(7).reason());
+        for(var event:rows) {
+            assertFalse(event.correlationId().isBlank());
+            assertEquals(event.eventType().name()+"_TRANSITION",event.reasonCode());
+            assertEquals(64,event.contentHash().length());
+        }
         ledgerVerifier.verifySite(f.site());
         // Simulate a privileged DB tamper in the test schema, without the
         // production append-only trigger. Verification must fail closed.
