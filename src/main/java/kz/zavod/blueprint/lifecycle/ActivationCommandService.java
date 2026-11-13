@@ -106,7 +106,7 @@ public class ActivationCommandService {
                 .orElseThrow(()->new IllegalStateException("MISSING_ACTIVATION_AUDIT"));
         var selected=sets.findById(receipt.resultSetId())
                 .orElseThrow(()->new IllegalStateException("MISSING_ACTIVATION_SELECTION"));
-        ledger.verifySite(siteId);
+        ledger.verifyReceiptEvent(siteId,commandKey);
         var evidence=businessTransitions.findBySiteIdAndCommandKey(siteId,commandKey)
                 .orElseThrow(()->new IllegalStateException("MISSING_BUSINESS_TRANSITION"));
         if(evidence.eventType()!=BusinessTransitionEntity.EventType.ACTIVATE
