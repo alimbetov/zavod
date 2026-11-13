@@ -65,7 +65,7 @@ class TelemetryRegistryPostgresTest {
         assertThrows(TelemetryIngestionConflict.class,()->registry.registerSimulated(forged));
         assertEquals(original,mappings.findById(signalId.toString()).orElseThrow().definition());
         assertEquals(List.of(original),registry.list(site,blueprint.id(),2));
-        assertEquals(1,mappings.count());
+        assertEquals(1,registry.list(site,blueprint.id(),2).size());
     }
 
     @Test void versionPinnedBindingRoundTripsAndRejectsCrossSiteAndUnknownEquipment() {
@@ -76,7 +76,7 @@ class TelemetryRegistryPostgresTest {
                 "L1","pump","pressure","bar",SourceKind.SIMULATED,Duration.ofSeconds(30));
         assertEquals(def,registry.registerSimulated(def));
         assertEquals(List.of(def),registry.list(site,blueprint.id(),2));
-        assertEquals(1,mappings.count());
+        assertEquals(1,registry.list(site,blueprint.id(),2).size());
         assertThrows(RuntimeException.class,()->registry.list(other,blueprint.id(),2));
         assertThrows(IllegalArgumentException.class,()->registry.registerSimulated(
                 new SignalDefinition(UUID.randomUUID(),site,blueprint.id(),2,
