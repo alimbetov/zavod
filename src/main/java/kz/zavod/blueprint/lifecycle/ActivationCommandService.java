@@ -75,7 +75,7 @@ public class ActivationCommandService {
         validateKey(commandKey);
         String actor=authorize(siteId);
         var receipt=commands.findBySiteIdAndCommandKey(siteId,commandKey)
-                .orElseThrow(()->new BlueprintLifecycleException("COMMAND_OUTCOME_NOT_COMMITTED"));
+                .orElseThrow(()->new BlueprintLifecycleException("COMMAND_OUTCOME_NOT_OBSERVED_RETRY"));
         if(!receipt.actorId().equals(actor))
             throw new SecurityException("SITE_ACCESS_DENIED");
         verifyCommittedReceipt(siteId,commandKey,receipt);
