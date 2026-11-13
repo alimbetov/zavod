@@ -25,6 +25,8 @@ public class BusinessTransitionEntity {
     @Column(name="previous_set_id",length=36) private String previousSetId;
     @Column(name="new_set_id",length=36) private String newSetId;
     @Column(name="reason",length=1024) private String reason;
+    @Column(name="reason_code",nullable=false,length=48) private String reasonCode;
+    @Column(name="correlation_id",nullable=false,length=128) private String correlationId;
     @Column(name="command_key",length=128) private String commandKey;
     @Column(name="content_hash",nullable=false,length=64) private String contentHash;
     @Column(name="previous_event_hash",nullable=false,length=64) private String previousEventHash;
@@ -34,11 +36,12 @@ public class BusinessTransitionEntity {
     public BusinessTransitionEntity(String id,String siteId,long sequenceNo,EventType type,
                                     String actorId,String blueprintId,long revisionNo,
                                     String previousSetId,String newSetId,String reason,String commandKey,
-                                    String contentHash,String previousEventHash,String eventHash,Instant createdAt) {
+                                    String reasonCode,String correlationId,String contentHash,String previousEventHash,String eventHash,Instant createdAt) {
         this.id=id;this.siteId=siteId;this.sequenceNo=sequenceNo;this.eventType=type;
         this.actorId=actorId;this.blueprintId=blueprintId;this.revisionNo=revisionNo;
         this.previousSetId=previousSetId;this.newSetId=newSetId;this.reason=reason;
-        this.commandKey=commandKey;this.contentHash=contentHash;
+        this.commandKey=commandKey;this.reasonCode=reasonCode;this.correlationId=correlationId;
+        this.contentHash=contentHash;
         this.previousEventHash=previousEventHash;this.eventHash=eventHash;this.createdAt=createdAt;
     }
     public String id(){return id;}
@@ -52,6 +55,8 @@ public class BusinessTransitionEntity {
     public String newSetId(){return newSetId;}
     public String reason(){return reason;}
     public String commandKey(){return commandKey;}
+    public String reasonCode(){return reasonCode;}
+    public String correlationId(){return correlationId;}
     public String contentHash(){return contentHash;}
     public String previousEventHash(){return previousEventHash;}
     public String eventHash(){return eventHash;}
