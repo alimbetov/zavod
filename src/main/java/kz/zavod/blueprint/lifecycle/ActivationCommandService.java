@@ -23,13 +23,15 @@ public class ActivationCommandService {
     private final ActivationCommandRepository commands;
     private final ActivationTransitionRepository transitions;
     private final BlueprintLifecycleService lifecycle;
+    private final PlantActivationSetRepository sets;
 
     public ActivationCommandService(SiteRepository sites,SiteMemberRepository members,
                                     ActivationCommandRepository commands,
                                     ActivationTransitionRepository transitions,
-                                    BlueprintLifecycleService lifecycle) {
+                                    BlueprintLifecycleService lifecycle,
+                                    PlantActivationSetRepository sets) {
         this.sites=sites;this.members=members;this.commands=commands;
-        this.transitions=transitions;this.lifecycle=lifecycle;
+        this.transitions=transitions;this.lifecycle=lifecycle;this.sets=sets;
     }
 
     @Transactional
@@ -49,12 +51,7 @@ public class ActivationCommandService {
             var existing=prior.orElseThrow();
             if(!actor.equals(existing.actorId())||!payloadHash.equals(existing.payloadHash()))
                 throw new BlueprintLifecycleException("IDEMPOTENCY_KEY_CONFLICT");
-            // Avoid depending on generated IDs: audit/command record is verified by matching result.
-            // Find receipt by deterministic command primary key.
-            var audit=transitions.findByCommandId(existingId(siteId,commandKey))
-                    .orElseThrow(()->new IllegalStateException("MISSING_ACTIVATION_AUDIT"));
-            if(!audit.newSetId().equals(existing.resultSetId()))
-                throw new IllegalStateException("ACTIVATION_AUDIT_MISMATCH");
+            verifyCommittedReceipt(siteId,commandKey,existing);
             return new Receipt(existing.resultSetId(),true);
         }
         String activated=lifecycle.activate(siteId,blueprintId,revision,expectedPreviousSetId);
@@ -72,11 +69,26 @@ public class ActivationCommandService {
                 .orElseThrow(()->new BlueprintLifecycleException("COMMAND_OUTCOME_NOT_COMMITTED"));
         if(!receipt.actorId().equals(actor))
             throw new SecurityException("SITE_ACCESS_DENIED");
+        verifyCommittedReceipt(siteId,commandKey,receipt);
+        return new Receipt(receipt.resultSetId(),true);
+    }
+    /** Verify receipt, matching append-only audit and persisted activation target.
+     * Never turn a partial/corrupted transaction into a successful reconciliation.
+     */
+    private void verifyCommittedReceipt(String siteId,String commandKey,ActivationCommandEntity receipt) {
         var audit=transitions.findByCommandId(existingId(siteId,commandKey))
                 .orElseThrow(()->new IllegalStateException("MISSING_ACTIVATION_AUDIT"));
-        if(!audit.newSetId().equals(receipt.resultSetId()))
+        var selected=sets.findById(receipt.resultSetId())
+                .orElseThrow(()->new IllegalStateException("MISSING_ACTIVATION_SELECTION"));
+        if(!siteId.equals(receipt.siteId())
+                ||!siteId.equals(audit.siteId())
+                ||!siteId.equals(selected.siteId())
+                ||!receipt.actorId().equals(audit.actorId())
+                ||!receipt.resultSetId().equals(audit.newSetId())
+                ||!selected.blueprintId().equals(audit.blueprintId())
+                ||selected.revisionNo()!=audit.revisionNo()
+                ||!Objects.equals(selected.previousSetId(),audit.previousSetId()))
             throw new IllegalStateException("ACTIVATION_AUDIT_MISMATCH");
-        return new Receipt(receipt.resultSetId(),true);
     }
     private String authorize(String siteId) {
         var authentication=SecurityContextHolder.getContext().getAuthentication();
@@ -96,7 +108,7 @@ public class ActivationCommandService {
             throw new IllegalArgumentException("INVALID_IDEMPOTENCY_KEY");
     }
     private static String existingId(String site,String key) {
-        return UUID.nameUUIDFromBytes((site+"|"+key).getBytes(StandardCharsets.UTF_8)).toString();
+        return UUID.nameUUIDFromBytes((site.length()+":"+site+":"+key).getBytes(StandardCharsets.UTF_8)).toString();
     }
     private static String hash(String input) {
         try {return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
