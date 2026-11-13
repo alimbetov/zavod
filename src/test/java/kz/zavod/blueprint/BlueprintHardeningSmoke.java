@@ -75,6 +75,17 @@ public final class BlueprintHardeningSmoke {
                 .anyMatch(f->f.code().equals("ACTIVE_LINE_QUOTA_EXCEEDED")),"Eleventh active line denied");
         check(BlueprintActivationPolicy.validate(drafts,Set.of("FOREIGN"),10).stream()
                 .anyMatch(f->f.code().equals("UNKNOWN_ACTIVE_UNIT")),"Unknown line rejected");
+        // A DRAFT can contain 99 lines, while a strict publish preflight inspects only the selected 10.
+        check(BlueprintPublicationGate.preflight(drafts,Set.of("L0","L1","L2","L3","L4","L5","L6","L7","L8","L9"),
+                10,EquipmentCatalog.standard()).isEmpty(),"Ten selected simple active units qualify; other 89 remain DRAFT");
+        check(BlueprintPublicationGate.preflight(drafts,Set.of("L0","L1","L2","L3","L4","L5","L6","L7","L8","L9","L10"),
+                10,EquipmentCatalog.standard()).stream().anyMatch(f->f.code().equals("ACTIVE_LINE_QUOTA_EXCEEDED")),
+                "Activation quota cannot be changed by Blueprint maxActiveLines");
+        var crossDraft=new ProcessBlueprint(drafts.id(),drafts.revision(),drafts.maxActiveLines(),
+                drafts.units(),drafts.sharedAssets(),List.of(),List.of(new Dependency("L0","L98")));
+        check(BlueprintPublicationGate.preflight(crossDraft,Set.of("L0"),10,EquipmentCatalog.standard()).stream()
+                .anyMatch(f->f.code().equals("INACTIVE_DEPENDENCY_PEER")),
+                "Cannot activate a unit while required upstream unit remains inactive");
 
         var old=EquipmentCatalog.standard().type("water-pump");
         var v2=new EquipmentType(old.key(),2,old.label(),old.capabilities(),old.modes(),old.ports());
