@@ -4,6 +4,7 @@ import {ReactFlow,Background,Controls,Handle,MiniMap,Position,ReactFlowProvider,
 import {studioApi,ApiFailure} from './api';
 import {EquipmentSymbol} from './Symbols';
 import {EquipmentEditor} from './EquipmentEditor';
+import {TelemetryMonitor} from './TelemetryMonitor';
 import {createGraph,CURRENT_TELEMETRY,LENSES,LENS_LABELS,LAYOUT_LABELS,ROLE_LABELS,
   variantId,type Blueprint,type CatalogEntry,type Diagnostic,type LayoutMode,type Lens,
   type Role,type ProcessUnit,type Equipment,type XRayView} from './model';
@@ -253,8 +254,13 @@ function WorkspaceInner(){
           <div className="xr-item"><span>Общие ресурсы</span><strong>{xray.sharedAssets.join(', ')||'—'}</strong></div>
           <div className="xr-item"><span>Совместное использование</span><strong>{xray.sharedResourcePeers.join(', ')||'—'}</strong></div></>}
         <div className="section-title">Монитор параметров</div>
-        <div className="empty-trend"><div className="trend-grid"/><strong>Нет подтверждённых измерений</strong>
-          <small>Температура, давление и тренды появятся только после квалифицированной привязки источника. Данные не симулируются молча.</small></div>
+        {site&&blueprint&&selectedUnit&&!dirty?
+          <TelemetryMonitor site={site} blueprintId={blueprint.id}
+            revision={savedRevision} unitId={selectedUnit}/>:
+          <div className="empty-trend"><div className="trend-grid"/>
+            <strong>Нет подтверждённых измерений</strong>
+            <small>Монитор доступен для сохранённой версии Blueprint.
+              LIVE PLC-сигналы не подключены.</small></div>}
       </aside>}
     </main>}
     <footer className="bottom-dock">
