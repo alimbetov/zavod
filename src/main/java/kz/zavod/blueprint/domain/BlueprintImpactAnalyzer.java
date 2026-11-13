@@ -29,12 +29,26 @@ public final class BlueprintImpactAnalyzer {
     /** Diff-aware entry point: physical changes propagate downstream; resource changes reach peers. */
     public static Impact analyzeChange(ProcessBlueprint before,ProcessBlueprint after) {
         BlueprintDiff.Delta delta=BlueprintDiff.compare(before,after);
+        // Use the union of old and new relationships so deleted units and removed
+        // inter-unit interfaces still identify their old downstream consumers.
+        List<ProcessUnit> unionUnits=new ArrayList<>(after.units());
+        Set<String> known=new HashSet<>();
+        after.units().forEach(u->known.add(u.id()));
+        for(ProcessUnit u:before.units())if(known.add(u.id()))unionUnits.add(u);
+        Set<Transfer> links=new LinkedHashSet<>(after.transfers());links.addAll(before.transfers());
+        Set<Dependency> deps=new LinkedHashSet<>(after.dependencies());deps.addAll(before.dependencies());
+        List<SharedAsset> unionAssets=new ArrayList<>(after.sharedAssets());
+        Set<String> assetKeys=new HashSet<>();
+        after.sharedAssets().forEach(a->assetKeys.add(a.id()));
+        for(SharedAsset asset:before.sharedAssets())if(assetKeys.add(asset.id()))unionAssets.add(asset);
+        ProcessBlueprint graph=new ProcessBlueprint(after.id(),after.revision(),after.maxActiveLines(),
+                unionUnits,unionAssets,new ArrayList<>(links),new ArrayList<>(deps));
         Set<String> origin=new TreeSet<>(delta.changedUnitIds());
         for(String asset:delta.changedAssetIds()) {
-            for(ProcessUnit u:after.units())for(ResourceUse use:u.resources())if(use.sharedAssetId().equals(asset))
+            for(ProcessUnit u:graph.units())for(ResourceUse use:u.resources())if(use.sharedAssetId().equals(asset))
                 origin.add(u.id());
         }
-        return traverse(after,origin,delta.changedAssetIds(),false);
+        return traverse(graph,origin,delta.changedAssetIds(),false);
     }
 
     private static Impact traverse(ProcessBlueprint b,Set<String> changed,
