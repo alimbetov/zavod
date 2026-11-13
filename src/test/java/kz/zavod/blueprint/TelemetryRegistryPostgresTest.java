@@ -51,6 +51,13 @@ class TelemetryRegistryPostgresTest {
         var original=new SignalDefinition(signalId,site,blueprint.id(),2,
                 "L1","pump","pressure","bar",SourceKind.SIMULATED,Duration.ofSeconds(30));
         assertEquals(original,registry.registerSimulated(original));
+        assertEquals(original,registry.registerSimulated(original),
+                "exact identical registration is a harmless idempotent retry");
+        assertThrows(TelemetryIngestionConflict.class,
+                ()->registry.registerSimulated(new SignalDefinition(UUID.randomUUID(),
+                        site,blueprint.id(),2,"L1","pump","pressure","bar",
+                        SourceKind.SIMULATED,Duration.ofSeconds(30))),
+                "same logical key with different ID cannot create a second mapping");
         // Reusing the same client-supplied ID must not mutate an immutable
         // signal binding. Otherwise historical samples would be reattributed.
         var forged=new SignalDefinition(signalId,site,blueprint.id(),2,
