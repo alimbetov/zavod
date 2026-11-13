@@ -1756,6 +1756,36 @@ CI проверил также три предыдущих JPA/PostgreSQL тес
 
 ---
 
+## 23. Engineering Properties — физические величины, паспортные параметры и ограничения
+
+**Статус:** НОВОЕ ТЗ, PLANNED, не production-code-complete. Назначение — добавить к существующему `EquipmentType / EquipmentInstance / Port` проверяемые физические характеристики, на которые смогут опираться Blueprint-to-HMI, OEM Import, What-if и Optimizer. **Типизированный граф без этой модели не даёт права рассчитывать физическую производительность.** Реализовывать как расширение существующего Java-каталога, а не отдельный движок или копию каталога на TypeScript.
+
+### 23.1 Контракты данных и неизменяемость
+
+- `PropertyDefinition(typeKey, templateVersion, propertyKey, valueKind, physicalDimension, allowedUnitCodes, required, min?, max?, precision?, catalogDefault?, applicabilityCondition?, evidenceRequirement)` — неизменяемое версионированное определение паспортного/инженерного параметра. Параметры могут быть числовыми, перечислениями, булевыми или строковыми; не всё оборудование имеет физическую величину.
+- `EngineeringQuantity(decimalValue, unitCode, dimensionCode)` — значение с явно указанной физической размерностью и проверяемым преобразованием единиц. Для денежных сумм, температур и точных паспортных порогов не использовать бесконтрольную арифметику `double`; для входящих физических измерений разрешать конечные числа с отдельной политикой точности.
+- `EquipmentPropertyValue(equipmentInstanceId, propertyKey, value, source, sourceDocumentRef?, evidenceStatus, effectiveRevision)`, где `source = MANUFACTURER | ENGINEER_VERIFIED | PROJECT_ASSUMPTION | MEASURED | IMPORT_SUGGESTION`. `IMPORT_SUGGESTION` по умолчанию не утверждён.
+- `OperatingEnvelope(propertyKey, nominalRange?, alarmRange?, absoluteDesignLimit?, conditionRefs?, sourceEvidence)`. **Паспортный предел ≠ уставка PLC ≠ технологическое предупреждение.** Web-приложение не устанавливает safety limits и не объявляет их одобренными автоматически.
+- `ProcessProfile(typeKey, version, requiredCapabilities, parameterRules, allowedFlowLoops, qualificationStatus)` — профиль процесса с явно квалифицированными допущениями, не hardcoded название отрасли в ядре.
+- `EngineeringEvidence(documentId, sha256, filename, vendor?, model?, revision?, pageOrSection?, verifiedBy?, verifiedAt?)` — ссылка на источник параметров без обязательного хранения файлов в MVP. Импорт из OEM-документов считается недоверенным до review.
+
+### 23.2 Единицы и инварианты
+
+Начальный набор: объём `L ↔ m³`, расход `L/min ↔ m³/h`, масса `kg ↔ t`, массовый расход `kg/h ↔ t/h`, давление `Pa ↔ bar`, мощность `W ↔ kW`, энергия `Wh ↔ kWh`, абсолютная температура `K ↔ °C` с корректным сдвигом шкалы. EC (`mS/cm`), pH и прочие показатели качества — **отдельные** правила; pH нельзя преобразовывать как линейный расход или «безразмерное число» без физического смысла. Запрещено преобразовывать расход ↔ объём без временного интервала, массу ↔ объём без плотности и давление ↔ производительность насоса без квалифицированной модели кривой насоса.
+
+При вводе проверять: поддерживаемую dimension/unit пару, границы, обязательность, provenance, конечное значение, допустимую точность, pinned templateVersion и соответствие ProcessProfile. Характеристики машины и значения измерений не подменяют друг друга. Unknown/missing не превращать в ноль. При изменении версии шаблона старые BlueprintRevision сохраняют прежнюю semantics.
+
+### 23.3 Golden engineering fixtures и приёмка
+
+- `SC-PHYS-001`: 1 m³/h = 16.666… L/min с документированной округлением; K/°C корректно смещаются; несовместимая dimension отклоняется.
+- `SC-PHYS-002`: water-pump паспорт 20 m³/h, рабочий диапазон и sourceDocumentRef переживают PostgreSQL Save/Reopen вместе с pinned template version.
+- `SC-PHYS-003`: замена насоса на другой template/version вызывает semantic Diff/Impact, а изменение x/y на Canvas — нет.
+- `SC-PHYS-004`: неопределённый размер трубопровода/напор или отсутствующая density возвращают `INSUFFICIENT_DESIGN_DATA`, не произвольную расчётную производительность.
+- `SC-PHYS-005`: для hydroponics сохраняются pH/EC/temperature measurement declarations с единицами, signalQuality и без выдуманных измерений.
+- `SC-PHYS-006`: OEM-документ с неверной/неизвестной unit или отсутствующим подтверждением даёт `REQUIRES_ENGINEER_REVIEW` и не становится опубликованным параметром.
+
+**Release gate:** сначала JUnit dimension/property fixtures и version migration compatibility; затем связывание с React Inspector и Catalog DTO. Никаких формул гидравлики, теплопередачи или химии без явно квалифицированного процесса и независимого инженерного oracle.
+
 ## 24. INT-0 / INT-1 — Implementation specification: ML-ready Foundation and Smart Line Designer (2026-11-13)
 
 **Status: APPROVED REQUIREMENTS / IMPLEMENTATION PLANNED; NOT CODE-COMPLETE.** This section is part of the sole canonical master specification, refines INT-001…INT-008 and Focus specifications in earlier sections; no duplicate master-TZ. Implement in Java 21/Spring Boot/JPA architecture incrementally during R0.6. No dependency on Tribuo, Timefold, ONNX or extra ML service in INT-0. Feature flags disabled by default; avoid any PLC command path. Assessment is advisory and never changes a published Blueprint.
@@ -1791,7 +1821,7 @@ Reuse BlueprintValidator for hard invalidity, BlueprintDiff and BlueprintImpactA
 
 **INT-0B (assessment + prediction seam)**: Deterministic server-side static design assessment using immutable snapshot and injected clock, stable sorted evidence and finding IDs, stub provider returning UNAVAILABLE. No side effects, zero Blueprint revision/hash change and no PLC I/O. If a persistence requirement later emerges, approve separate append-only assessment-run schema.
 
-**INT-0C (Focus)**: map findings to stable FocusRecommendation; no eager navigation to deleted/foreign equipment; manual selection and editing suppress auto-navigation; 20-second Auto Tour default, bounded queue, deduplication, cooldown and hysteresis according to §23. SIMULATED source visibly watermarked. Critical physical alarms must remain independent from view focus.
+**INT-0C (Focus)**: map findings to stable FocusRecommendation; no eager navigation to deleted/foreign equipment; manual selection and editing suppress auto-navigation; 20-second Auto Tour default, bounded queue, deduplication, cooldown and hysteresis according to §22.9. SIMULATED source visibly watermarked. Critical physical alarms must remain independent from view focus.
 
 **INT-0D (qualification)**: JUnit 21-compatible tests, Jackson roundtrip, deterministic replay, site-boundary and PostgreSQL Save/Reopen integration, basic property testing, no PLC writes. Browser E2E only after React Studio exists.
 
@@ -1973,3 +2003,165 @@ The following RED cases are **APPROVED TO AUTHOR** because their input, oracle, 
 - DEC-INT-15 (P0): source identity, installation history, measurement definitions and time-bound SignalBinding before real telemetry ingestion.
 
 **Recommended next actual work:** create executable RED-INT-01..04 + RED-INT-06..08 first, establish baseline failures without changing main production classes, review tests independently; only then fix core issues. RED-INT-09/10 and browser acceptance depend on secure R0.6 bridge; physical instrumentation cycle publishing requires DEC-INT-11 decision. Keep all implementation status declarations separate from this document-only approval.
+
+
+---
+
+## 25. Product Delivery Programme — шесть killer features и реализация от Blueprint до Intelligence
+
+**Статус:** единое ТЗ доработок / APPROVED FOR TEST DESIGN, **IMPLEMENTATION PLANNED**, кроме уже реализованных Java/JPA базовых сервисов из ``17–22. **Дата:** 2026-11-13. Этот раздел консолидирует продуктовую ценность и приоритеты, не создавая отдельное мастер-ТЗ, новый микросервис, новую ветку или обязательный ML в P0. Существующие требования STUDIO-*, FOCUS-*, INT-*, FR-HARD-* сохраняются, а требования KF-* описывают сквозную функциональность и новые acceptance.
+
+### 25.1 Для кого и какой результат продаёт Zavod
+
+**Zavod Physical Process OS — «From Blueprint to Intelligent Operations».** Инженер на локальном/предприятном сервере выбирает Process Pack, проектирует физический ProcessUnit, связывает каталожные EquipmentInstance через typed Ports, задаёт проверенные характеристики, сохраняет/сравнивает ревизии, запускает **виртуальный** HMI и получает объяснимую диагностику. После квалифицированного site-local read-only Edge появляется real telemetry; далее — рекомендации по причинам, обслуживанию и расписанию. Целевые пилоты: (A) небольшая насосная/дозировочная установка, (B) гидропонная NFT-рециркуляция, (C) объединённая площадка из до 99 синтетических разнообразных ProcessUnits.
+
+**Главная уникальность:** один authoritative engineering Blueprint → валидация → виртуальный HMI → диагностические события → Impact/What-if → документация и только затем реальные read-only сигналы. Ни один downstream-продукт не создаёт собственную независимую схему оборудования.
+
+**Первое ценностное доказательство (vertical slice):** создать насосно-дозировочный участок из библиотеки → валидировать физические порты → задать параметры → сохранить PostgreSQL → закрыть/открыть с тем же layout → запустить Virtual HMI → искусственно поднять температуру насоса → получить Focus и explainable evidence → сравнить ревизии при замене оборудования. Тот же runtime должен поддержать гидропонный DRAFT с рециркуляцией, но блокировать физически не квалифицированную публикацию.
+
+### 25.2 Шесть отличающих продукт функций
+
+| Feature | Стартовый уровень | Приоритет | Результат для инженера | Жёсткая граница |
+|---|---|---|---|---|
+| **KF-A — Blueprint-to-Operations** | R0.6–R0.7 | P0 | По инженерной модели генерируются Virtual HMI, список сигналов, diagnostics/connection map и экспортируемая документация | Нет auto-PLC configuration; любая реальная SignalBinding требует FAT/SAT |
+| **KF-B — Smart Focus + Explainable Assessment / Root-Cause Candidates** | R0.7 virtual; R2 telemetry | P0 для virtual Focus, P1 для RCA | При подозрении подсветить точный EquipmentInstance, показать evidence, тренд, качество сигнала и связанные units | Предполагаемая первопричина ≠ доказанный физический отказ; независимая Alarm Panel |
+| **KF-C — OEM Equipment Import Assistant** | R0.8 structured import; R3 AI-assisted | P1 | Считать CSV/JSON/register list, предложить шаблон EquipmentType/ports/properties/SignalBindings, инженер утверждает diff | Никакого автоматического доверия к PDF/LLM/PLC адресам, запрет auto-publish и PLC write |
+| **KF-D — What-if Engineering Simulator** | R0.6 diff; R2 guarded quantity | P1 | Заменить насос/удалить порт/изменить shared resource и увидеть точные последствия, ограничения и сценарии | DESIGN_ESTIMATE/SIMULATED/MEASURED строго разделены; без допустимых физических допущений — UNKNOWN |
+| **KF-E — Industry Process Packs** | R0.8 | P0 для первых 2 packs | Выбрать проверенную насосную или гидропонную типовую схему и адаптировать под своё оборудование | Pack — версионированный пример, не заводская сертификация и не «пуск одной кнопкой» |
+| **KF-F — Multi-Line Production Optimizer** | R4, после SCADA/MES | P2 | Offline-предложение по загрузке общих ресурсов и очередности операций с доказуемыми ограничениями | Только advisor/what-if; без автоматического исполнения расписания через PLC |
+
+### 25.3 P0 Engineering Builder / Blueprint Studio — минимальный рабочий продукт
+
+1. **Одна модель:** Java `ProcessBlueprint` и versioned `EquipmentCatalog` authoritative; React+TypeScript+React Flow — редактор, не отдельный домен. `ViewLayout` сохраняется независимо от EngineeringGraph; UI-перемещение не создаёт новую физическую ревизию.
+2. **Inspector параметров:** поддержать `PropertyDefinition/EngineeringQuantity/OperatingEnvelope` (`23) и evidence source. Water и admixture — разные ports, а FlowKind/medium/unit/min/max подтверждаются сервером.
+3. **Серверный Bridge:** Catalog DTO, Create/Load/Save Draft, Validate, Impact, separate layout Save/Load и однообъектный Plant Overview. Stable JSON schema version; optimistic expectedRevision/ETag → controlled 409; limits on schema size, graph count and recursion.
+4. **Локальная разработка:** допустим отдельный явно включаемый `DEV_LOCAL_ONLY` режим без интерактивного login **только на loopback и для синтетических данных**. Никакого `permitAll` при внешнем bind, без действий с PLC, PROD security сохраняет deny-by-default и site-scoped authorization. Работающий промышленный API без контроля доступа запрещён.
+5. **UI workflow:** Site Explorer → Process Pack/Blank → Equipment Palette → Canvas → Details → Validate → Save Draft → Reopen → Compare Changes. Поддержка keyboard, Undo/Redo, explicit recovery повреждённого черновика и confirmation при удалении связанных узлов.
+6. **Сложная площадка:** Overview 1/10/50/99 ProcessUnits и зависимости; подробный Canvas загружает только один unit, не 853 equipment одновременно. Важно сохранить границы physical transfer и shared assets.
+
+Не включать в R0.6 3D, generic Blueprint scripting, реальную управляющую автоматику, собственный frontend graph engine, Kafka, новую графовую БД или отдельный ML-service.
+
+### 25.4 Blueprint-to-Operations (KF-A): набор генераторов
+
+Входы: `BlueprintRevision`, проверенные `EquipmentType`, `ProcessProfile` и validated `SignalBinding`; выходы — **производные, детерминированные, пересоздаваемые** projections.
+
+- `EngineeringDiagnosticsProjection`: оборудование, связи, unbound ports, severity, точные object IDs и варианты устранения. Не меняет валидатор и результаты PublicationGate.
+- `SignalManifestProjection`: expected sensor/capability, signalKey, declared engineeringUnit, источник, BindingStatus=UNBOUND|VIRTUAL|READ_ONLY_BOUND|QUALIFIED. Не придумывать Modbus registers или OPC UA node IDs.
+- `VirtualHmiProjection`: equipment tiles/icons, per-unit summary, pumps/valves/tanks, SIMULATED watermark, lastUpdatedAt, GOOD/UNCERTAIN/BAD/STALE, графики синтетических наблюдений; no command widgets.
+- `TechnicalDocumentProjection`: перечень EquipmentInstances (key/version), ports/connections, shared assets, источники паспортных параметров, BlueprintRevision/hash, diagnostics, export JSON/HTML/PDF только после отдельного теста формата. Ссылка «проект» не заменяет чертёж/сертифицированный P&ID.
+- Все проекции имеют `projectionSchemaVersion, sourceBlueprintRevision, sourceCatalogVersion`, creation provenance и одинаковые stable equipment/port IDs. Для одного входа/версии правил результат семантически одинаков при replay; изменение layout не меняет physical projection.
+
+**HMI не является настоящей SCADA**, пока Edge/historian, mapping и OT test не квалифицированы.
+
+### 25.5 Smart Focus + explainable assessment (KF-B)
+
+В первом релизе только `SIMULATED` telemetry: 20-секундный optional Auto Tour, Manual/Pin/Pause, Smart Focus queue и отдельная Alarm Panel. При подтверждённом WARNING на насосе отображается предложение перейти к target equipment; при редактировании нет принудительного движения viewport. В WALLBOARD (позже) допускается автоматическая навигация по выбранной политике.
+
+**AssessmentEngine** работает для всех наблюдаемых узлов, независимо от текущего фокуса; `Observation` имеет source/received UTC, finite value, physical unit, quality/provenance. Rule evaluation: per-equipment qualified thresholds, minimum duration, trend, hysteresis, cooldown, bounded dedup queue, stale/missing as quality problem. В Inspector показываются observed value, threshold/rule version, last valid sample, uncertainty, history, reason, affected downstream via typed Impact.
+
+**RootCauseCandidate(reason, evidenceReferences, hypothesisConfidence?, affectedUnits, limitations)** — оценочная гипотеза, НЕ доказанная причина. До реальной телеметрии нельзя утверждать, что «насос перегрелся» в физическом мире. ML, Tribuo и автоматический ремонт не нужны для P0.
+
+### 25.6 Process Packs (KF-E) и OEM-импорт (KF-C)
+
+**Минимальные версионированные Process Packs:**
+- `PUMP-DOSING-001`: water tank → pump → filter/valve → dosing/process section, измерение температуры/давления отдельно как Instrumentation; default values только DEMO, до engineer approval.
+- `HYDRO-NFT-001`: reservoir → pump → grow channels → return loop, pH/EC/temperature sensor attachments, configurable grow zone; `RECIRCULATION_UNQUALIFIED` остаётся блокирующим publish finding до инженерной квалификации.
+- `PACKAGING-001` (следующая golden fixture): item supply → filling → capping → labeling → quality check; ITEM_FLOW отличается от MATERIAL.
+
+Каждый Pack имеет `packId/version, catalogVersionRequirements, pinned ProcessProfile, templateBlueprint, allowedOverrideKeys, assumptions, documentRefs, qualificationStatus, fixtureTestId, licenseNotice`. Создание проекта из pack порождает **новые instance IDs** и не модифицирует pack. Устаревший Pack не меняет открытые ревизии; обновление выполняется только через explicit preview/diff/migration.
+
+**OEM importer phase 1:** CSV/JSON equipment list, typed port/register manifest, normalized physical units, optional manufacturer/model evidence → `ImportProposal` с per-field confidence/validation, source rows и unmatched values → инженерский Review/Accept → immutable EquipmentDefinition new version. При неоднозначном register mapping никакого автоматического SignalBinding. PDF parser/LLM optical extraction — **phase 2, optional**; документы считаются недоверенным вводом, sanitization, size caps, no prompt-driven script execution, no network/PLC credentials.
+
+### 25.7 What-if (KF-D) и Production Optimizer (KF-F)
+
+**What-if:** создать отдельную `ScenarioRevision` или копию immutable Blueprint, не изменяя ACTIVE; выполнить semantic Diff → exact Impact → rule validation → optional qualified capacity estimate → compare reason paths. В первой версии: замена насоса/портов, отказ общего компрессора, удаление промежуточной станции и изменение объёма буфера. Результат включает `designStatus, affectedUnitIds, brokenLinks, resourceConflicts, assessmentEvidence, assumptions, confidenceClass`. На неполных данных вывод `INSUFFICIENT_DESIGN_DATA`; это нормальный успешный результат теста.
+
+**Optimizer** подключать только после подтверждения длительностей операций, размеров партий, материального баланса, production events, buffer capacities и ресурсных календарей. Кандидат Solver выбирается по тестам лицензии/точности; `OptimizationProposal` всегда offline, проверяется независимым constraint-validator и содержит objective, constraints, feasibility, baselineComparison и approval state. Никаких PLC commands. Условия неполных или противоречивых данных возвращают `INFEASIBLE` или `INSUFFICIENT_DATA`.
+
+### 25.8 Нормативные требования / traceability
+
+| ID | Приоритет | Требование | Acceptance |
+|---|---|---|---|
+| KF-FR-001 | P0 | Единый серверный Blueprint и version-aware Catalog DTO без второго frontend registry | SC-KF-001,002 |
+| KF-FR-002 | P0 | EngineeringProperties+units+evidence с pinned versions (`23) | SC-KF-003,004 |
+| KF-FR-003 | P0 | React Canvas / Inspector / typed handles / site overview | SC-KF-005,006 |
+| KF-FR-004 | P0 | JPA draft Save/Reopen + independent ViewLayout CAS + safe 409 UX | SC-KF-007,008 |
+| KF-FR-005 | P0 | Server validation + exact object highlighting / Impact | SC-KF-009,010 |
+| KF-FR-006 | P0 | Blueprint-to-Operations deterministic signal manifest and Virtual HMI | SC-KF-011,012 |
+| KF-FR-007 | P0 | Synthetic assessment + Manual/Auto Tour/Smart Focus, no forced navigation while editing | SC-KF-013,014 |
+| KF-FR-008 | P0 | No PLC writes; no accidental remote anonymous write, safe DEV_LOCAL_ONLY | SC-KF-015 |
+| KF-FR-009 | P1 | Explainable RCA candidate + signal quality/provenance and time-window rules | SC-KF-016,017 |
+| KF-FR-010 | P1 | Two verified Process Packs with stable versioning and new instance IDs | SC-KF-018,019 |
+| KF-FR-011 | P1 | Structured OEM ImportProposal+engineer review; no silent register/port coercion | SC-KF-020,021 |
+| KF-FR-012 | P1 | What-if DesignScenario, exact impact and unknown/insufficient guardrail | SC-KF-022,023 |
+| KF-FR-013 | P1 | Site-local read-only Edge+signal quality/historian after OT review | SC-KF-024 |
+| KF-FR-014 | P2 | Feasible offline production optimizer with auditable proposals | SC-KF-025,026 |
+| KF-FR-015 | P0 | Build, integration, browser E2E and licensing/CI on only `main` | SC-KF-027,028 |
+| KF-FR-016 | P1 | 99-unit overview and 100/500/1000 benchmarks with SQL/heap/latency evidence | SC-KF-029 |
+| KF-FR-017 | P1 | Offline deployment without mandatory cloud; backup/restart recovery | SC-KF-030 |
+| KF-FR-018 | P1 | UX pilot proves time-to-valid-blueprint and debugging benefit, actual testers | SC-KF-031 |
+
+### 25.9 Acceptance scenarios (RED / PLANNED until implemented and CI-verified)
+
+| ID | Сценарий и независимый PASS oracle |
+|---|---|
+| SC-KF-001 | Java Catalog и UI palette имеют одинаковые typeKey, version, FlowKind, medium, cardinality; нет независимого TypeScript-каталога |
+| SC-KF-002 | Обновление каталога v1→v2 сохраняет v1 Blueprint/readiness и требует explicit migration |
+| SC-KF-003 | Математически корректные преобразования L/min↔m³/h, Pa↔bar, K↔°C и запрет несовместимых размерностей |
+| SC-KF-004 | Паспортный предел, квалифицированная уставка, наблюдение и PROJECT_ASSUMPTION не смешиваются после JPA Save/Reopen |
+| SC-KF-005 | Engineer GUI: tank→pump→valve, drag/drop, typed handles, Inspector; серверная проверка схемы совпадает с UI |
+| SC-KF-006 | Plant Overview N=99 с 64 transfers и shared resources → открыть L037, не загрузив остальные 98 внутренних Canvas |
+| SC-KF-007 | Graph + ViewLayout Save → restart/reopen браузера: stable IDs, graph/hash, x/y/zoom без потерь |
+| SC-KF-008 | Две вкладки меняют Revision N; одна запись успешна, вторая получает 409 и экран сравнения, локальные правки не стираются |
+| SC-KF-009 | Несовместимое water→cement, IN→IN и capacity>1 дают exact server code + focus on port, DRAFT сохраняется |
+| SC-KF-010 | Заменить pump L037 → Diff/Impact возвращает golden affected IDs/reasonPaths без посторонних модулей |
+| SC-KF-011 | Blueprint→SignalManifest и VirtualHmiProjection с stable EquipmentIDs, pinned versions и SIMULATED; нет выдуманных PLC tags |
+| SC-KF-012 | Повторная генерация виртуального HMI из того же Blueprint/rule version семантически идентична; layout move не меняет physical projection |
+| SC-KF-013 | FakeClock Auto Tour 20s, Manual Pin/Edit Pause и Smart Focus при synthetic pump overheating с достоверным rule evidence |
+| SC-KF-014 | BAD/STALE/UNCERTAIN не интерпретируются как реальный перегрев; WARNING не двигает камеру во время edit; CRITICAL panel не исчезает |
+| SC-KF-015 | Anonymous remote/foreign-site write rejected; DEV_LOCAL_ONLY loopback only; synthetic mode never reaches PLC command API |
+| SC-KF-016 | Qualified temperature trend > minDuration → reproducible SuspicionEvent with source timestamp, evidence and rule version |
+| SC-KF-017 | RCA показывает 2 гипотезы с ограничениями и затронутыми upstream/downstream, но не заявляет недоказанную физическую причину |
+| SC-KF-018 | Из PUMP-DOSING-001 создать два проекта: разные instance IDs, одинаковая versioned pack semantics |
+| SC-KF-019 | HYDRO-NFT-001 loop сохраняется как DRAFT, при отсутствии site-qualified recirculation PUBLISH заблокирован |
+| SC-KF-020 | CSV/JSON OEM import: 10 полей, 2 неизвестные единицы, 1 неоднозначный register → proposal с точным source row и review blockers |
+| SC-KF-021 | Отклонённое предложение не меняет Catalog; подтверждённое создаёт новую immutable version, не меняя старую |
+| SC-KF-022 | What-if remove physical port used by transfer → точный broken boundary report, old ACTIVE untouched |
+| SC-KF-023 | Для serial homogeneous line 20→12→15 t/h вернуть условный ceiling 12 t/h; для mixed/batch/unknown → INSUFFICIENT_DESIGN_DATA |
+| SC-KF-024 | На отдельном стенде read-only signal mapping + disconnect/stale/provenance; никакого network/PLC write; OT review required |
+| SC-KF-025 | Offline constrained schedule respects shift/resource/buffer/mass limits, output proposal verifies feasible |
+| SC-KF-026 | Missing/contradictory constraints gives INFEASIBLE/INSUFFICIENT_DATA without invented benefit or automatic plant control |
+| SC-KF-027 | `npm ci`, frontend unit/build, Java/JPA/Testcontainers and Playwright against real backend all PASS on same `main` SHA |
+| SC-KF-028 | OSS SBOM/license review (Apache-2.0 preferred; MIT allowed), no secret committed, CI version+seed reproducibility |
+| SC-KF-029 | 10/50/99 overview and 100/500/1000 engineering snapshot benchmark record p50/p95/p99, SQL, heap, browser rendering; baseline approved before SLA |
+| SC-KF-030 | Service restart and PostgreSQL backup/restore preserve immutable BlueprintRevision, ActivationSet and visible layout; offline local operation succeeds |
+| SC-KF-031 | At least 3 external pilot engineers complete guided Build→Validate→Save→Preview; report actual completion time, confusion points, defects and rework; product gate requires reviewed findings, not invented metric |
+
+**Приёмка для первого продаваемого MVP:** SC-KF-001…015 и 027/028 PASS (virtual only), плюс хотя бы один пилотный Process Pack после отдельной инженерной проверки. SC-KF-016…026 и 029–031 остаются поэтапными; отсутствие INT/Optimizer не блокирует демонстрацию R0.6. На рабочих/опасных установках демонстрация как промышленной SCADA запрещена до OT и FAT/SAT.
+
+### 25.10 Roadmap, владельцы контрактов и stop/go gates
+
+| Release | Приоритет | Блок результата | Зависимости / Gate |
+|---|---|---|---|
+| **R0.6A — Backend Bridge** | P0 | Catalog/Blueprint/Layout/Validate/Impact DTO/API, property registry (`23), safe local-dev mode, 409 semantics | Existing JPA + security boundary, RED API tests |
+| **R0.6B — React Studio** | P0 | Explorer, Palette, typed Canvas, Inspector, Save/Reopen, errors/highlight | R0.6A CI + Playwright golden pump scene |
+| **R0.7 — Blueprint-to-Virtual HMI** | P0 | Signal manifest + VirtualHmiProjection + fake observations, Auto Tour 20s, Smart Focus, diagnostics | R0.6B + simulated provenance contract; no PLC I/O |
+| **R0.8 — Industry Packs / Digital Commissioning** | P1 | PUMP-DOSING-001, HYDRO-NFT-001, engineering pack review, structured OEM CSV/JSON import | Property units, versioned catalog, qualification blockers |
+| **R1 — Read-only Industrial Edge pilot** | P1 | OPC UA/Modbus TCP read-only, historian, quality/staleness, site-local offline runtime | Separate OT threat model, network isolation, FAT/SAT |
+| **R2 — Intelligence / What-if** | P1 | Explainable trend/rule assessment + impact + qualified design estimates and what-if | Real observations, units and rule validation |
+| **R3 — OEM Import Assistant (AI optional)** | P1 | PDF/OEM manual parsing proposals + evidence review/uncertain mapping | Structured import and data-governance maturity |
+| **R4 — Production Optimizer** | P2 | Offline constrained scenario optimizer and approval workflow | Real MES event durations, qualified material and asset constraints |
+
+**Implementation sequence:** RED contract tests → independent test review → GREEN with existing Java/JPA modular monolith → integration/Testcontainers → browser Playwright + virtual monitoring → independent architecture/OT review at hardware boundary. **Only `main`**, no new branches, no second master-spec. Before changes on main: local/test gate and ability to revert; after push mandatory GitHub Actions and exact SHA.
+
+**Exit criteria:** R0.6B ends when an engineer builds and reopens a useful 3–6-equipment process without JSON editing; R0.7 when the same revision produces SIMULATED HMI and Focus on an injected thermal anomaly without altering engineering state; R0.8 when two contrastive packs reuse the same model with correct safety qualifiers; R1 when one real sensor read-only input survives disconnect/reconnect and audit; later R2–R4 must show measured utility, not merely valid algorithms.
+
+### 25.11 Не делать в ближайшем P0
+
+- Никакого автоматического выполнения PLC-команд, E-stop или safety logic из Java/Web/ML.
+- Никаких 3D/VR, обязательной коммерческой SCADA/ML-лицензии, AI import before verified manual schema, генерации произвольного user code или микросервисного дробления.
+- Не использовать `spring.jpa.hibernate.ddl-auto=update` как production migration mechanism; DEV update, PROD validate и отдельный проверенный schema deployment/rollback; Liquibase/Flyway пока не добавлять.
+- Не трактовать 10 000 synthetic tests как 10 000 реальных устройств и не объявлять 99 connected production lines tested.
+- Не создавать второй «универсальный процесс» в TypeScript: frontend сохраняет server contract; любая разница отображается явной schema error, а не тихой конверсией.
+
+**Канонический статус на дату ТЗ:** Java/JPA Engineering Core и лабораторная генерация существуют; React Studio, Virtual HMI, Smart Focus runtime, OEM import, What-if physics, real historian, Predictive Maintenance и Production Optimizer — PLANNED. Этот раздел не является свидетельством реализации новых функций.
