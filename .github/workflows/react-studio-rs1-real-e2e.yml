@@ -1,0 +1,81 @@
+name: react-studio-rs1-real-e2e
+on:
+  pull_request:
+    paths:
+      - 'web/**'
+      - 'src/**'
+      - 'pom.xml'
+      - '.github/workflows/react-studio-rs1-real-e2e.yml'
+jobs:
+  real-backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16.6
+        env:
+          POSTGRES_DB: zavod
+          POSTGRES_USER: zavod
+          POSTGRES_PASSWORD: zavodtest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U zavod -d zavod"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      ZAVOD_DB_URL: jdbc:postgresql://127.0.0.1:5432/zavod
+      ZAVOD_DB_USER: zavod
+      ZAVOD_DB_PASSWORD: zavodtest
+      REAL_BACKEND_E2E: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Compile real Spring Boot app
+        run: mvn -B --no-transfer-progress -DskipTests package
+      - name: Start local-only Spring Boot
+        run: |
+          nohup java -jar target/zavod-blueprint-0.5.0-SNAPSHOT.jar --spring.profiles.active=dev-local > /tmp/zavod-rs1-backend.log 2>&1 &
+          echo $! > /tmp/zavod-rs1-backend.pid
+          for i in $(seq 1 90); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/v1/dev/sites || true)
+            if [ "$code" != "000" ]; then exit 0; fi
+            if ! kill -0 "$(cat /tmp/zavod-rs1-backend.pid)" 2>/dev/null; then
+              cat /tmp/zavod-rs1-backend.log
+              exit 1
+            fi
+            sleep 2
+          done
+          cat /tmp/zavod-rs1-backend.log
+          exit 1
+      - name: Install frontend
+        working-directory: web
+        run: npm install --no-audit --no-fund
+      - name: Build frontend
+        working-directory: web
+        run: npm run build
+      - name: Install Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Real PostgreSQL and Chromium RS-1 E2E
+        working-directory: web
+        run: npx playwright test e2e/real-backend.spec.ts
+      - name: Upload failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rs1-real-postgresql-evidence
+          path: |
+            web/test-results
+            /tmp/zavod-rs1-backend.log
+          retention-days: 7
