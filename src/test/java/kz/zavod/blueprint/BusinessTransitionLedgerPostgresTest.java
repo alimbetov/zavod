@@ -40,6 +40,7 @@ class BusinessTransitionLedgerPostgresTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired BusinessTransitionRepository ledger;
     @Autowired BusinessTransitionLedger ledgerVerifier;
+    @Autowired BusinessLedgerAuditService fullAudit;
     @AfterEach void clear(){SecurityContextHolder.clearContext();}
 
     private void actor(String name) {
@@ -177,6 +178,47 @@ class BusinessTransitionLedgerPostgresTest {
                 ()->ledgerVerifier.verifyReceiptEvent(f.site(),"bounded-check"));
         assertThrows(IllegalStateException.class,
                 ()->commands.observe(f.site(),"bounded-check"));
+    }
+
+    @Test void fullAuditDetectsOlderCorruptionOutsideBoundedReceiptWindow() {
+        var f=setup();
+        actor("reviewer");
+        lifecycle.approve(f.site(),f.blueprint(),1,Set.of("L1"));
+        actor("publisher");
+        lifecycle.publish(f.site(),f.blueprint(),1);
+        actor("activator");
+        commands.activate(f.site(),"audit-key",f.blueprint(),1,null);
+        var original=ledger.findTopBySiteIdOrderBySequenceNoDesc(f.site()).orElseThrow();
+        var pinned=Map.of(f.site(),
+                new BusinessLedgerAuditService.Anchor(original.sequenceNo(),original.eventHash()));
+        var baseline=fullAudit.auditAll(pinned);
+        var verified=baseline.sites().stream().filter(x->x.siteId().equals(f.site()))
+                .findFirst().orElseThrow();
+        assertEquals("PASS",verified.status());
+        // The bounded replay checks event 3 and its neighbors, not a site's entire
+        // historical audit. A full audit must catch older independent tampering.
+        jdbc.update("update business_transition set correlation_id=? where site_id=? and sequence_no=1",
+                "forged",f.site());
+        var corrupted=fullAudit.auditAll(pinned);
+        assertEquals("FAIL",corrupted.sites().stream()
+                .filter(x->x.siteId().equals(f.site())).findFirst().orElseThrow().status());
+        assertFalse(corrupted.passed());
+    }
+
+    @Test void trustedExternalAnchorDetectsDeletedChainTip() {
+        var f=setup();
+        actor("reviewer");
+        lifecycle.approve(f.site(),f.blueprint(),1,Set.of("L1"));
+        var tip=ledger.findTopBySiteIdOrderBySequenceNoDesc(f.site()).orElseThrow();
+        var trusted=Map.of(f.site(),
+                new BusinessLedgerAuditService.Anchor(tip.sequenceNo(),tip.eventHash()));
+        var pass=fullAudit.auditAll(trusted);
+        assertEquals("PASS",pass.sites().stream()
+                .filter(x->x.siteId().equals(f.site())).findFirst().orElseThrow().status());
+        jdbc.update("delete from business_transition where site_id=?",f.site());
+        var failed=fullAudit.auditAll(trusted);
+        assertEquals("ANCHOR_HISTORY_TRUNCATED",failed.sites().stream()
+                .filter(x->x.siteId().equals(f.site())).findFirst().orElseThrow().errorCode());
     }
 
     @Test void journalInsertFailureRollsBackApprovalAtomically() {
