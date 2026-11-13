@@ -65,6 +65,8 @@ public class BlueprintLifecycleService {
         var approval=approvals.lockApproval(key(blueprintId,revision))
                 .orElseThrow(()->new BlueprintLifecycleException("NOT_APPROVED"));
         if(!siteId.equals(approval.siteId()))throw new SecurityException("SITE_ACCESS_DENIED");
+        // Publication must have a second accountable human, including when both actors are ADMIN.
+        if(actor.equals(approval.approvedBy()))throw new BlueprintLifecycleException("FOUR_EYES_REQUIRED");
         approval.publish(actor);
         approvals.saveAndFlush(approval);
     }
