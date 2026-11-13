@@ -44,10 +44,10 @@ END $$;
 SET ROLE g42_runtime;
 INSERT INTO business_transition
  (id,site_id,sequence_no,event_type,actor_id,blueprint_id,revision_no,
-  content_hash,previous_event_hash,event_hash,created_at)
+  reason_code,correlation_id,content_hash,previous_event_hash,event_hash,created_at)
  VALUES ('review-001','g42-review-site',1,'APPROVE','reviewer',
   '00000000-0000-0000-0000-000000000001',1,
-  repeat('a',64),'',repeat('b',64),now());
+  'APPROVE_TRANSITION','review-correlation',repeat('a',64),'',repeat('b',64),now());
 RESET ROLE;
 SQL
 
