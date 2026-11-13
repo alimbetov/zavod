@@ -9,7 +9,7 @@ import static kz.zavod.blueprint.domain.ProcessBlueprint.*;
  */
 public final class BlueprintImpactAnalyzer {
     private BlueprintImpactAnalyzer() {}
-    public record AssetContention(String assetId, int configuredDemand, int capacity,
+    public record AssetContention(String assetId, long configuredDemand, int capacity,
                                   boolean exclusiveConflict, Set<String> consumers) {
         public AssetContention { consumers=Set.copyOf(consumers); }
     }
@@ -55,13 +55,13 @@ public final class BlueprintImpactAnalyzer {
                                    Set<String> changedAssets, boolean includeAllPeers) {
         Set<String> known=new HashSet<>();
         Map<String,SortedSet<String>> assetUsers=new HashMap<>();
-        Map<String,Integer> totalDemand=new HashMap<>();
+        Map<String,Long> totalDemand=new HashMap<>();
         Map<String,SortedSet<String>> downstream=new HashMap<>();
         for(ProcessUnit u:b.units()) {
             known.add(u.id());
             for(ResourceUse use:u.resources()) {
                 assetUsers.computeIfAbsent(use.sharedAssetId(),k->new TreeSet<>()).add(u.id());
-                totalDemand.merge(use.sharedAssetId(),use.demand(),Integer::sum);
+                totalDemand.merge(use.sharedAssetId(),(long)use.demand(),Math::addExact);
             }
         }
         if(!known.containsAll(changed))throw new IllegalArgumentException("Unknown changed unit");
@@ -96,7 +96,7 @@ public final class BlueprintImpactAnalyzer {
         }
         List<AssetContention> contention=new ArrayList<>();
         for(SharedAsset asset:b.sharedAssets()) {
-            int total=totalDemand.getOrDefault(asset.id(),0);
+            long total=totalDemand.getOrDefault(asset.id(),0L);
             Set<String> consumers=assetUsers.getOrDefault(asset.id(),Collections.emptySortedSet());
             boolean exclusive=asset.mode()==AssetMode.EXCLUSIVE&&consumers.size()>1;
             if(total>asset.capacity()||exclusive)
