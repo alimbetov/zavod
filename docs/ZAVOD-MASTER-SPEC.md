@@ -1082,3 +1082,112 @@ R0.1-IMPORT → R0.2 → R1.0 → R2.0 → R2.1 → R3.0 → R4+.
 - Региональные промышленные нормы/допуски/инструкции конкретного объекта должны быть получены и проверены до пилота.
 
 **Исторический provenance:** консолидация 11 прежних файлов из ветки `docs/r0-industrialos-master-spec` коммит `3ecba55aa1e10fce79f58b16ed8e7c44b62ce957`. Прежние `docs/requirements`, `docs/architecture`, `docs/security`, `docs/testing`, `docs/roadmap`, `docs/decisions`, `docs/strategy` сохранены в Git history, но текущий нормативный файл один.
+
+
+---
+
+## 17. R0.4 — эксперимент Plant Scenario Lab: 1–99 взаимосвязанных линий
+
+**Статус:** проектная архитектура + синтетический лабораторный эксперимент; **не** утверждение о промышленной готовности, пропускной способности или совместимости PLC. Исходники: `src/main/java/kz/zavod/lab/`, тесты `src/test/java/kz/zavod/lab/`. Веточный CI должен быть подтверждён до ревью.
+
+### 17.1 Цель эксперимента и политика масштабирования
+
+Проверить технологическую универсальность при **1, 10, 50, 99 одновременно описанных линиях**, уникальном структурном наборе оборудования, межлинейных передачах, зависимостях и общих ресурсах. Проверка 99 — только **нагрузочный профиль модели**, а не жёсткий предел в API, БД или самой доменной модели.
+
+**MVP** остаётся `maxActiveLines=10` на площадку; политика `maxActiveLines` является конфигурационным и проверяемым бизнес-правилом. Режим тестового стенда выставляет 99 и не требует новой архитектуры. Наличие 99 модельных линий не гарантирует выдерживание 99 PLC/потоков телеметрии/операторов — это другие виды нагрузочного тестирования.
+
+**Структурная уникальность линии в эксперименте** определена как fingerprint, построенный из типа процесса, списка типов оборудования, технологического графа связей и измерительных привязок **без lineId/nodeId**. Уникальные человеческие названия не считаются доказательством уникальных паттернов. В рабочем продукте одинаковые паттерны разрешены: требование уникальности относится только к генератору тестовых случаев.
+
+### 17.2 Правильная иерархия графов
+
+```mermaid
+flowchart TB
+ P["Plant: 1–99 test lines"]
+ L["LineRevision × N: internal equipment + typed port graph"]
+ I["PlantInterconnectionRevision: boundary port transfers / dependencies"]
+ A["Shared PlantAssets: capacity / allocation policy"]
+ S["SignalBinding and MeasurementAttachment"]
+ H["HMI scene projection per line"]
+ P --> L
+ P --> I
+ P --> A
+ L --> S
+ L --> H
+ I --> L
+ I --> A
+```
+
+1. **LineGraph:** собственные EquipmentInstance, версионированные EquipmentType, физические ports, internal directed connections, port cardinality/medium validator. Линия публикует контракты `LineBoundaryPort` и имеет независимую `LineRevision`.
+2. **InterLineGraph:** связи только через явно названные граничные порты. `MaterialTransfer` проверяет направление, класс среды, совместимость и лимиты fan-in/fan-out; **позже** должен иметь binding к физическому входу/выходу и количественный баланс. `ProcessDependency` задаёт предусловия выполнения и отдельно от физического перемещения продукции.
+3. **SharedResourceGraph:** `PlantAsset` с единой физической идентичностью, заявки `ResourceDemand`, ограничения доступной мощности; локальный симулятор — справедливое моделирование ожидания, **не PLC-переключатель**.
+4. **InstrumentationGraph:** сенсор/измерение прикрепляется к объекту `MeasurementAttachment`; нельзя моделировать датчик давления как обязательный материальный проточный узел. `SignalBinding` и физические PLC-адреса — следующая ступень.
+5. **Presentation/HMI Graph:** независимая проекция с layout, zoom, группировкой и отображением состояний; **не** определяет реальные технологические связи.
+
+**Не делать один гигантский React Flow canvas на 99 линий.** Разделить `Plant Overview` (сводка 99 линий, зависимости, общие ресурсы) и `Line Designer` (открытая одна линия и её локальный граф), загружать и валидировать изменившиеся части инкрементально; показывать Impact Analysis по связанным линиям.
+
+### 17.3 Состояния, ревизии и активация
+
+- `PlantRevision` фиксирует набор line revisions, shared asset revisions и `InterLineRevision` — совместимость проверяется атомарно до `PlantActivationSet`.
+- Изменение одной линии или общего ресурса порождает `ImpactReport(affectedLineIds, interfaces, reasons)`, без неявной модификации других `APPROVED/ACTIVE` версий.
+- Временная симуляция/эмуляция привязана к immutable revision set + seed + clock model; никогда не изменяет опубликованную производственную конфигурацию.
+- Ошибки `DUPLICATE_LINE`, `UNKNOWN_NODE`, `UNKNOWN_PORT`, `INCOMPATIBLE_STREAM`, `REQUIRED_PORT_MISSING`, `PORT_CAPACITY_EXCEEDED`, `MATERIAL_CYCLE`, `INCOMPATIBLE_TRANSFER`, `TRANSFER_FANOUT_UNSUPPORTED`, `INTERLINE_DEPENDENCY_CYCLE`, `RESOURCE_DEMAND_EXCEEDS_CAPACITY`, `LINE_LIMIT_EXCEEDED` должны возвращаться со стабильными code + entity reference.
+
+### 17.4 Три слоя виртуального исполнения
+
+- **Structural emulation (R0.4):** генератор валидных инженерных схем (Batch бетон, Continuous насосная, Discrete упаковка) с вариативными цепочками оборудования, межлинейными transfer/dependency и shared assets.
+- **Logical scheduling simulation (R0.4):** дискретные условные такты, release-after-upstream, буфер виртуальных единиц доступности, fairness при распределении resource slots, счётчики WAITING_UPSTREAM/WAITING_RESOURCE/PRODUCED. Вывод не выражается в тоннах или м³.
+- **Process-aware simulation (позже):** материальный баланс и единицы, фактические циклы, накопительные буферы, времена обработки, расход сырья, аварии, состояние PLC-симулятора. Не объявлять реализованным по результату первых двух слоёв.
+
+В первой версии feedback-петли и технологическая рециркуляция **запрещены до отдельного профиля/анализатора**; ограничения текущей модели fan-in/fan-out = 1, нет контролируемого распределения материального потока. Для новых режимов потребуется модель разветвителей/смесителей/буферов и проверки сохранения массы.
+
+### 17.5 Новые требования R0.4
+
+| ID | Приоритет | Требование | Приёмка |
+|---|---|---|---|
+| FR-LAB-001 | P0 | Генерация 1/10/50/99 строк LineGraph с различными корректными equipment patterns | SC-LAB-001, 002 |
+| FR-LAB-002 | P0 | typed internal ports, stable graph validation, line lifecycle independence | SC-LAB-003, 006 |
+| FR-LAB-003 | P0 | Typed boundary transfer и отдельная precedence dependency | SC-LAB-004, 007 |
+| FR-LAB-004 | P0 | Shared asset capacity и детерминированное ожидание ресурса | SC-LAB-005, 010 |
+| FR-LAB-005 | P0 | Sensors через instrumentation attachment, не material flow | SC-LAB-008 |
+| FR-LAB-006 | P0 | Разделение `maxActiveLines` policy и графической/доменной масштабируемости | SC-LAB-009 |
+| FR-LAB-007 | P1 | Согласованная PlantActivationSet ревизия и impact analysis межлинейных изменений | SC-LAB-011 (пока PLANNED) |
+| FR-LAB-008 | P1 | JSON schema/import/export всех ссылок и golden fixture 99 lines | SC-LAB-012 (пока PLANNED) |
+| FR-LAB-009 | P1 | Инкрементальная серверная проверка и UX lazy rendering отдельной линии | SC-LAB-013 (пока PLANNED) |
+| FR-LAB-010 | P1 | Количественная модель throughput, buffers, resource allocation, time and units | SC-LAB-014 (пока PLANNED) |
+
+### 17.6 SC-LAB — критерии испытаний
+
+| ID | Проверяемое ожидаемое поведение | Статус |
+|---|---|---|
+| SC-LAB-001 | 1/10/50/99 линий создаются и проходят проверку структуры | Локально PASS |
+| SC-LAB-002 | Все 99 структурных сигнатур уникальны | Локально PASS |
+| SC-LAB-003 | Нарушения портов/обязательных связей/циклов отклоняются | Локально PASS |
+| SC-LAB-004 | 64 transfer и 14 dependency в профиле 99; ошибочная среда отклоняется | Локально PASS |
+| SC-LAB-005 | Общие ресурсы вызывают ожидание при насыщении | Локально PASS |
+| SC-LAB-006 | Межлинейная ссылка на чужой локальный node запрещена | Локально PASS |
+| SC-LAB-007 | Недопустимые межлинейные циклы / fanout отклоняются | Локально PASS |
+| SC-LAB-008 | Датчик давления — instrumentation attachment | Локально PASS |
+| SC-LAB-009 | Политика на 10 блокирует 99, но тестовая политика 99 допускает | Локально PASS |
+| SC-LAB-010 | Два запуска одного виртуального сценария дают одинаковые итоги | Локально PASS |
+| SC-LAB-011 | Атомарная публикация связанной PlantActivationSet + impact analysis | PLANNED |
+| SC-LAB-012 | JSON export/import/restore 99 линий с сохранением связей | PLANNED |
+| SC-LAB-013 | React UI открывает отдельно выбранную линию из 99 без подвисания | PLANNED |
+| SC-LAB-014 | Material balance / equipment cycle times / constrained intermediate buffers | PLANNED |
+| SC-LAB-015 | Разрыв связи / перезапуск Edge не влияет на независимую PLC safety | PLANNED (только после R2 стенда) |
+
+**Локальная реализация:** Java 21, 52 assertion checks на ветке; 0 реальных PLC вызовов. До CI на head и независимого review не переносить статусы в production-quality PASS.
+
+### 17.7 Воспроизводимые синтетические результаты
+
+Выполнение `bash scripts/test-plant-scenario-lab.sh`, на отдельной Java 21 лаборатории (**240 условных тиков**).
+
+| Линии | Nodes | Internal edges | Transfers | Dependencies | Virtual units per 240 ticks |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 8 | 7 | 0 | 0 | 240 |
+| 10 | 70 | 57 | 5 | 1 | 1 440 |
+| 50 | 407 | 340 | 31 | 7 | 1 680 |
+| 99 | 853 | 721 | 64 | 14 | 1 680 |
+
+Стабилизация throughput при >=50 линиях вызвана **искусственно заданной ёмкостью** двух общих ресурсов (`compressed-air=3`, `electrical-supply=4` slots/tick). Это тест ограничения, а не прогноз реального выпуска. Времена исполнения зависят от JVM, прогрева, железа и нагрузки; они **не служат production SLA**.
+
+**Технические долги перед настоящим фундаментом:** line boundary привязать к физическим ports и media balance; version-aware EquipmentType registry вместо строк; ввести реальные временные/количественные единицы и ограниченные буферы; хранить ревизии + migrations; испытать incremental impact, concurrency и Playwright 99-line overview. Нельзя использовать лабораторный код для управления заводом.
