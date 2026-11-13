@@ -121,6 +121,24 @@ class BlueprintBusinessJourneyPostgresTest {
     }
 
     @Test
+    void sameActorCannotApproveAndPublishEvenWithAdministratorRole() {
+        Fixture f=setup(3);
+        members.saveAndFlush(new SiteMemberEntity(UUID.randomUUID().toString(),
+                f.siteId(),"engineer-admin",SiteMemberEntity.Role.ADMIN));
+        actor("engineer-admin");
+        lifecycle.approve(f.siteId(),f.id(),2,f.selected());
+        var refusal=assertThrows(BlueprintLifecycleException.class,
+                ()->lifecycle.publish(f.siteId(),f.id(),2));
+        assertEquals("FOUR_EYES_REQUIRED",refusal.getMessage());
+        assertEquals(BlueprintApprovalEntity.State.APPROVED,
+                approvals.findById(f.id()+":2").orElseThrow().state());
+        actor("publisher");
+        lifecycle.publish(f.siteId(),f.id(),2);
+        assertEquals(BlueprintApprovalEntity.State.PUBLISHED,
+                approvals.findById(f.id()+":2").orElseThrow().state());
+    }
+
+    @Test
     void createValidateSaveApprovePublishActivateReviseAndRetainHistoricalSet() {
         Fixture f=setup(99);
         actor("viewer");
