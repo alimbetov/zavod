@@ -28,6 +28,17 @@ export const studioApi={
       body:JSON.stringify({expectedRevision,snapshot:bp})}),
   validate:(site:string,id:string,bp:Blueprint):Promise<Diagnostic[]> =>
     request(scope(site,id)+'/validate',{method:'POST',headers:{'X-Zavod-Dev-Write':'true'},body:JSON.stringify(bp)}),
+  loadLayout:(site:string,id:string,viewId:string):Promise<{
+    viewId:string;layoutVersion:number;blueprintRevision:number;
+    layout:{unitId:string;positions:Record<string,{x:number;y:number}>;
+      viewport:{x:number;y:number;zoom:number}}
+  }>=>request(scope(site,id)+'/layouts/'+encodeURIComponent(viewId)),
+  saveLayout:(site:string,id:string,viewId:string,body:{
+    expectedLayoutVersion:number;blueprintRevision:number;
+    layout:{unitId:string;positions:Record<string,{x:number;y:number}>;viewport:{x:number;y:number;zoom:number}}
+  }):Promise<{viewId:string;layoutVersion:number;blueprintRevision:number}> =>
+    request(scope(site,id)+'/layouts/'+encodeURIComponent(viewId),{
+      method:'PUT',headers:{'X-Zavod-Dev-Write':'true'},body:JSON.stringify(body)}),
   xray:(site:string,id:string,unitId:string):Promise<XRayView> =>
     request(scope(site,id)+'/x-ray?unitId='+encodeURIComponent(unitId)),
 };
