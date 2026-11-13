@@ -47,6 +47,11 @@ public final class BlueprintCoreSmoke {
                 "hydroponic feedback loop explicitly flagged as unqualified");
         ok(BlueprintReadiness.blockers(hydro,EquipmentCatalog.standard()).stream().anyMatch(x->x.code().equals("RECIRCULATION_UNQUALIFIED")),
                 "hydroponic loop cannot be published merely by toggling a flag");
+        var secondCircuit=new ProcessUnit("hydro-circuit-2",UnitKind.CIRCUIT,"hydroponics.nft.v1",
+                loop.equipment(),loop.connections(),loop.boundaries(),loop.resources(),loop.measurements(),true);
+        var twoCircuits=new ProcessBlueprint(UUID.randomUUID(),1,1,List.of(loop,secondCircuit),List.of(),List.of(),List.of());
+        ok(BlueprintValidator.validate(twoCircuits).stream().noneMatch(x->x.code().equals("LINE_POLICY_EXCEEDED")),
+                "line limit does not accidentally count non-line process units");
         var mismatchedPorts=new Equipment("pump-invalid","water-pump",1,List.of(
                 new Port("water-in",Direction.IN,FlowKind.MATERIAL,"cement",1,1),
                 new Port("water-out",Direction.OUT,FlowKind.MATERIAL,"water",0,1)));
