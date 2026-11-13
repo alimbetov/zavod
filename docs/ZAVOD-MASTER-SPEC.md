@@ -1191,3 +1191,59 @@ flowchart TB
 Стабилизация throughput при >=50 линиях вызвана **искусственно заданной ёмкостью** двух общих ресурсов (`compressed-air=3`, `electrical-supply=4` slots/tick). Это тест ограничения, а не прогноз реального выпуска. Времена исполнения зависят от JVM, прогрева, железа и нагрузки; они **не служат production SLA**.
 
 **Технические долги перед настоящим фундаментом:** line boundary привязать к физическим ports и media balance; version-aware EquipmentType registry вместо строк; ввести реальные временные/количественные единицы и ограниченные буферы; хранить ревизии + migrations; испытать incremental impact, concurrency и Playwright 99-line overview. Нельзя использовать лабораторный код для управления заводом.
+
+
+---
+
+## 18. R0.5 — Physical Process OS / Zavod Blueprint
+
+**Design decision (Draft):** Zavod develops as a Physical Process OS. The authoritative, versioned engineering artifact is the **Zavod Blueprint**; SCADA/HMI, simulation and MES are derived views and runtimes. The general process unit can be a LINE, CIRCUIT, ZONE or STATION. Equipment, typed physical ports, instrumentation, material/item transfers, explicit dependencies and shared resources are distinct concepts. This expands the earlier Line model without invalidating existing FR/SC identifiers.
+
+### 18.1 Scale and boundaries
+
+- The 10-active-line MVP limit remains a configurable product policy, not a database array limit. Scenarios 1/10/50/99 exercise synthetic structure and do not imply 99 PLCs or qualified live throughput.
+- Plant/Blueprint snapshots include independently described ProcessUnits and typed inter-unit boundary contracts. A physical asset has one identity even if shared by many units.
+- ProcessUnit CIRCUIT is the foundation for hydroponics/recirculation. Real recirculation is not yet fully qualified: explicit flow-loop rules, buffers, measurements and failure modes remain mandatory future work. Process dependency cycles remain blocked.
+- Revisions are append-only: changes create a new snapshot. Impact analysis finds downstream connections and peers sharing constrained assets; it does not execute or authorize physical operations.
+- An incomplete DRAFT may be saved and reopened. Unknown catalogue templates, mismatched ports and unbound boundaries block PUBLISH until reviewed and repaired.
+
+### 18.2 Java/JPA engineering slice
+
+- Java 21 pure domain: ProcessBlueprint, EquipmentRef (key/version), ProcessUnit, Boundary, Transfer, Dependency, SharedAsset, BlueprintValidator, BlueprintCatalogAudit and BlueprintImpactAnalyzer.
+- LabBlueprintAdapter migrates existing synthetic R0.4 fixtures. R0.4 boundary interfaces are unbound, so the migrated data is DRAFT only.
+- One Spring Boot MVC modular-monolith with PostgreSQL/JPA append-only BlueprintRevisionEntity snapshots; schema marker blueprint.v1 and SHA-256 corruption check.
+- Revision writes require expectedPreviousRevision and a unique DB constraint on (blueprint_id, revision_no); old snapshots remain readable. No REST write API or physical control API in this stage.
+- Database connection parameters are environment supplied. No Liquibase/Flyway in R0.5.
+
+### 18.3 Requested development configuration
+
+~~~properties
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.open-in-view=false
+spring.jpa.properties.hibernate.jdbc.lob.non_contextual_creation=true
+spring.jpa.show-sql=false
+spring.jpa.properties.hibernate.format_sql=false
+spring.datasource.hikari.maximum-pool-size=5
+spring.datasource.hikari.minimum-idle=1
+spring.datasource.hikari.idle-timeout=30000
+spring.datasource.hikari.connection-timeout=30000
+~~~
+
+**Production gate:** schema auto-update is **development only**. The production profile uses validate and requires a separately reviewed schema deployment/backup plan. Pool size 5 is a local starting point, not a validated 99-line telemetry configuration.
+
+### 18.4 New acceptance scenarios
+
+| ID | Required result | Qualification |
+|---|---|---|
+| SC-BP-001 | Generate 1/10/50/99 units with distinct structural equipment patterns | JDK21 core smoke |
+| SC-BP-002 | Save and reload 99 units, all equipment, 64 transfers, 14 dependencies and shared assets | PostgreSQL Testcontainers |
+| SC-BP-003 | Change one unit, save revision 2, reload revision 1 unchanged | PostgreSQL Testcontainers |
+| SC-BP-004 | Impact report finds dependent and shared-resource peers | Core and integration |
+| SC-BP-005 | maxActiveUnits=10 policy warns/blocks 99, while test policy 99 accepts | Core smoke |
+| SC-BP-006 | Unknown template/unbound boundary reported; DRAFT preserved but not published | Core and integration |
+| SC-BP-007 | Shared capacity contention detected, not mistaken for real production throughput | Core and integration |
+| SC-BP-008 | Interunit dependency cycles blocked; hydroponic recirculation requires separate engineering safety review | Core smoke / future |
+| SC-BP-009 | Stale revision write fails and PostgreSQL unique constraint preserves history | Integration |
+| SC-BP-010 | Actual HMI, MES and PLC read-only projection tests | PLANNED; excluded from this PR |
+
+**CI gate:** Java 21 javac smoke, then Maven/JUnit/Testcontainers PostgreSQL on the exact PR HEAD. No success claim until CI completes. Real OEM/PLC connectivity, process physics, quantified buffers, nested units, production approval, security/RBAC and performance benchmarking are later workstreams. Never represent this laboratory as a certified SCADA or industrial safety controller.
