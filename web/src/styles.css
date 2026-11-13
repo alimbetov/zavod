@@ -51,3 +51,21 @@
 .telemetry-controls label{display:inline-flex;align-items:center;gap:4px}
 .telemetry-controls select{max-width:120px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:4px;padding:4px}
 .telemetry-controls input{accent-color:var(--accent)}
+
+
+/* DEV-only engineering demonstration, never a physical-plant HMI alarm. */
+.demo-journey{border-bottom:1px solid var(--line);background:var(--panel);padding:12px 20px;display:flex;flex-direction:column;gap:7px}
+.demo-heading{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.demo-heading>div{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.demo-heading strong{font-size:13px}
+.demo-identity{font-size:10px;color:var(--muted)}
+.demo-steps{display:flex;gap:7px;flex-wrap:wrap}
+.demo-steps button{border:1px solid var(--line);border-radius:6px;padding:7px 10px;background:var(--panel2);color:var(--ink);font-size:11px}
+.demo-steps button.demo-complete{border-color:#23856d;color:#77d0b0}
+.demo-journey p{margin:0}
+.demo-evidence{color:var(--muted);font-size:11px}
+.demo-message{color:#73c3b0;font-size:11px}
+.demo-error{color:#e09c9c;font-size:11px}
+.demo-alarm{margin:8px 0;padding:9px;border:1px solid #b56d56;border-radius:6px;color:#efb19c;background:rgba(181,109,86,.13);font-weight:600}
+.demo-nominal{margin:8px 0;color:#68bda6;font-size:11px}
+@media(max-width:900px){.demo-heading{align-items:flex-start;flex-direction:column}.demo-steps button{flex:1 1 145px}}
