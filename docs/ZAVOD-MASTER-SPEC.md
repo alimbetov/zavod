@@ -2428,3 +2428,170 @@ Secrets, certificates and remote maintenance access must follow the enterprise O
 6. **Real process/OT:** пока нет historian, настоящих сигналов, process-qualified гидропонной рециркуляции, HMI/Smart Focus runtime или PLC интеграции. Не выводить из успешных тестов физический throughput или готовность к безопасности.
 
 **Итог:** R0.6A — частично реализован, engineering values и local bridge проходят CI. Полный P0 продуктовый gate остаётся OPEN до работающего React Canvas + engineer-qualified process fixture + реальных browser E2E. R0.7 Smart Focus, INT ML/Optimization и OT-0…OT-6 не переводить в DONE автоматически.
+
+
+---
+
+## 28. BCQ-1 — Business Core Qualification: реестр процессов, бизнес-инварианты, RED→GREEN→Regression
+
+**Статус:** инженерный контракт и протокол фактического независимого ревью. **Новый приоритет:** доказать корректность существующего домена до расширения React Studio, SCADA/Telemetry, AI/ML и модулей Production Execution. Этот раздел входит в ЕДИНОЕ мастер-ТЗ, не создаёт вторую спецификацию или новую ветку. Область квалификации: Java 21, Spring Boot, JPA, PostgreSQL, `BlueprintValidator`, `BlueprintPublicationGate`, `BlueprintLifecycleService`, `BlueprintImpactAnalyzer`, `BlueprintDraftService`, `BlueprintCatalogAudit`. Никакого PLC write, запуска технологического процесса или операционной сертификации.
+
+### 28.1 Модель состояний: что именно хранится
+
+**Важно не путать три разных агрегата:**
+
+1. **Engineering revision:** `ProcessBlueprint(id,revision,...)` — immutable append-only snapshot. Создание и редактирование нового Draft всегда означает **новую** ревизию; в таблице `blueprint_revision` нет физического поля `draft_state`. Валидация — вычисляемая функция от snapshot и versioned catalog, а не доверенный клиентский флаг.
+2. **Engineering approval:** `BlueprintApproval(blueprintId,revisionNo,selectedUnitsJson,state)`, состояние `ABSENT → APPROVED → PUBLISHED`; статус не равен фактическому разрешению выполнять физическое управление. `APPROVED` и `PUBLISHED` относятся к **точной** immutable ревизии и набору выбранных узлов.
+3. **Site activation:** `Site(activeSetId)` указывает на immutable `PlantActivationSet(id,blueprintId,revisionNo,selectedUnitIds,previousSetId,activatedAt,activatedBy)`. Состояния `NO_SET → ACTIVE_SET_1 → ACTIVE_SET_2`; это **выбор действующей инженерной конфигурации**, а НЕ физический запуск линии. Сохранение Draft N+1 никогда не меняет Site.activeSetId автоматически.
+
+**Нормативный переход:** `Create → Validate (без модификаций) → Save Draft revision N → Approve(N, selected) → Publish(N) → Activate(N, expectedPreviousSetId) → Revise(N+1) → Validate → Approve/Publish/Activate(N+1)`. При неуспехе любого из этапов утверждения/активации предыдущее состояние Site остаётся валидным. При работе с 99 проектными линиями можно активировать 10 по server-owned политике, сохранив все 99 в Draft.
+
+**Недопустимые переходы:** `ABSENT→PUBLISHED`; `APPROVED→ACTIVE` без публикации; изменение `PUBLISHED` snapshot; автоматическое activation при `SaveDraft`; два `Activate` с одним expected pointer; повторная активация идентичного (blueprint/revision/selection) состояния; принятие недостоверных каталогов/датчиков/межлинейных интерфейсов; перезапись предыдущей инженерной ревизии.
+
+### 28.2 Реестр бизнес-процессов и переходов
+
+| BP-ID | Процесс | Актор/компонент | Preconditions | Postconditions / failure |
+|---|---|---|---|---|
+| BP-001 | Provision Site, Membership, Blueprint-Site ownership | Site admin / локальная sandbox | Проверенные Site и actor | Уникальная site scope и server-owned quota; защищённый production provisioning **OPEN** |
+| BP-002 | Create engineering Blueprint | Engineer / Studio backend | Site exists, edit privilege | Draft rev1 создан; при ошибке DB transaction rollback; production editor authorization **OPEN** |
+| BP-003 | Validate graph | Pure domain engine | Typed snapshot / pinned templates | Полный список structural/catalog/resource diagnostics, без DB writes |
+| BP-004 | Save Draft revision | BlueprintDraftService | expectedPreviousRevision совпадает с HEAD | Ровно N+1 append-only, hash/schema, CAS; stale → domain conflict |
+| BP-005 | Compute Change/Impact | BlueprintDiff/ImpactAnalyzer | Before/after того же Blueprint | Exact changed units и достижимые dependent IDs, current (not historic) resource conflicts |
+| BP-006 | Preflight selected units | PublicationGate | Server quota, selected IDs, catalog | Checks closure, cardinality, media, boundary, resources, validated measurement; никакого side-effect |
+| BP-007 | Approve | REVIEWER/ADMIN | Site ownership, immutable saved revision, preflight PASS | Approval state APPROVED; repeated/concurrent writes → ALREADY_APPROVED |
+| BP-008 | Publish | PUBLISHER/ADMIN | Approval state APPROVED, scope valid | State PUBLISHED, actor/timestamp; repeat/out-of-order blocked |
+| BP-009 | Activate | ACTIVATOR/ADMIN | Published exact rev, current site pointer matches, preflight PASS | Append ActivationSet + update Site pointer **in one DB transaction**; stale blocked |
+| BP-010 | Revise active Blueprint | Engineer / DraftStore | Active may be pinned at revision N | Save N+1 without rewriting Approval N, ActivationSet N or Site.activeSetId |
+| BP-011 | Re-approve and switch active selection | REVIEWER→PUBLISHER→ACTIVATOR | New revision/published selection, correct expected pointer | New ActivationSet.previousSetId points to old; historical set immutable |
+| BP-012 | Recovery and inspection | Backend startup / VIEWER | PostgreSQL available | Active pointer, snapshots, hashes, ownership and history readable; full JVM/backup test **OPEN** |
+| BP-013 | Technical audit / change review | Reviewer | Two immutable revisions | Impact and conflict evidence, no hidden unrelated IDs; multi-cause explanation **PARTIAL** |
+| BP-014 | Real production execution | Future Execution module | Approved engineering model + site safety commissioning | **NOT IMPLEMENTED**; activation is not run/start |
+| BP-015 | Operational integrity and audit | Future Integrity module | Production event and persistent transaction | **NOT IMPLEMENTED**; outbox/replay/forensic audit pending |
+
+### 28.3 Нормативные бизнес-инварианты BR-001…BR-032
+
+| BR | Правило, запрещённое нарушение | Текущее доказательство / статус |
+|---|---|---|
+| **BR-001** | Blueprint принадлежит одному Site; посторонняя площадка не получает его Draft/Approval/Activation | PASS internal+dev-local; production IdP OPEN |
+| **BR-002** | Всякая ревизия immutable, старые версии не изменяются | PostgreSQL Save/Reopen/Journey PASS |
+| **BR-003** | Новый Draft только N+1, CAS; два конкурирующих writer не могут оба сохранить N+1 | Concurrency PostgreSQL PASS |
+| **BR-004** | Corrupted hash/unsupported schema обнаруживаются, не подменяются | Persistence PostgreSQL PASS |
+| **BR-005** | Неполный/неверный Draft может быть сохранён, но не опубликован | Validation/Lifecycle PASS |
+| **BR-006** | Physical port direction, FlowKind, medium и cardinality проверяются сервером | BlueprintValidator smoke PASS |
+| **BR-007** | Межлинейные Boundary/Transfer closure и dependency cycle нельзя скрыть выбором подмножества | PublicationGate + smoke PASS; cross-blueprint references OPEN |
+| **BR-008** | Сумма demand shared resource и EXCLUSIVE применяются к реально выбранному набору | ResourcePolicy + Gate PASS в одном Blueprint; cross-site shared assets OPEN |
+| **BR-009** | Серверный maxActiveLines применяется к ACTIVE, не к 99 Draft | JPA/Unit PASS |
+| **BR-010** | Template key+version pinned; нет silent upgrade | Catalog/Persistence PASS |
+| **BR-011** | Неподтверждённые паспортные EngineeringProperties не проходят readiness | EngineeringProperties smoke PASS; physical OEM oracle OPEN |
+| **BR-012** | Ошибочный Boundary binding и удалённый используемый порт блокируют approval/activation | Validator/Lifecycle PASS |
+| **BR-013** | Неподтверждённая рециркуляция допустима как Draft, блокирует Publish | Validator/Readiness PASS |
+| **BR-014** | Approval относится к конкретным сохранённым ревизии и selection | Persistence/Lifecycle PASS |
+| **BR-015** | Approval требует REVIEWER или ADMIN и доступа к Site | Lifecycle PostgreSQL PASS; four-eyes OPEN |
+| **BR-016** | Approval не принимается при preflight blockers и не меняет active pointer | JPA negative tests PASS |
+| **BR-017** | Два concurrent Approve одной revision дают только один row и controlled ALREADY_APPROVED | BusinessJourney PostgreSQL PASS |
+| **BR-018** | Publish только из APPROVED; повторная публикация заблокирована | Lifecycle state guards PASS |
+| **BR-019** | PUBLISHED не мутирует сохранённый engineering snapshot | JPA immutability PASS |
+| **BR-020** | Activate только после PUBLISHED, с проверкой ревизии/site membership | Lifecycle PostgreSQL PASS |
+| **BR-021** | Site переключает ровно один activeSetId; предыдущая запись остаётся immutable | JPA transaction tests PASS |
+| **BR-022** | Конкурентные Activate с одним previous pointer: 1 SUCCESS, 1 STALE | Lifecycle PostgreSQL PASS |
+| **BR-023** | Ошибка новой ревизии/activation сохраняет прежнее действующее состояние и history | BusinessJourney negative test PASS |
+| **BR-024** | Повтор той же активной config не создаёт новый ActivationSet | BusinessJourney PASS: ALREADY_ACTIVE |
+| **BR-025** | INSTRUMENT feedback не является MATERIAL_CYCLE; ITEM_FLOW и MATERIAL cycles различаются | RED reproduced; domain fix + pure Java smoke PASS |
+| **BR-026** | Только каталожный sensor с MEASURE может быть source Measurement; signalKey не blank | RED audit; CatalogAudit + smoke PASS |
+| **BR-027** | Impact вычисляет affected IDs по старым и новым связям, сохраняя удалённые зависимости | Golden 99-line and business-core smoke PASS |
+| **BR-028** | Impact сообщает ресурсные конфликты только **текущей** revision, без stale historical pressure | RED audit; current-only contention smoke PASS |
+| **BR-029** | Новый Draft после activation не изменяет activated revision до повторного Publish/Activate | Full PostgreSQL journey PASS |
+| **BR-030** | Restart приложения оставляет DB Blueprint revision и active pointer неизменными | Spring ApplicationContext restart regression including 99-line saved laboratory Blueprint (853 devices, 64 transfers, 14 dependencies); **полный JVM/process restart OPEN** |
+| **BR-031** | Реальный production API требует identity, role EDITOR, независимый Audit Trail и four-eyes | OPEN (действует deny-by-default, dev-local только loopback) |
+| **BR-032** | Physical Execution не запускается из инженерного `Activate`; нет PLC write | Контракт/prototype boundary PASS; field OT evidence OPEN |
+
+**Аудиторское замечание:** \`ADMIN\` сейчас может выполнять REVIEWER/PUBLISHER/ACTIVATOR в одном лице; это не нарушает текущие unit-тесты, но **не соответствует будущему правилу независимого инженерного утверждения**. Для промышленной эксплуатации нужен rule-maker ≠ approver для safety-critical изменений и аудит личности, а не только имени из Test SecurityContext.
+
+### 28.4 Независимое code review — архитектурные выводы
+
+| Review ID | Класс | Найденный недостаток | Исправление / остаточная работа |
+|---|---|---|---|
+| BCQ-AUD-001 | `BlueprintValidator` | Все типы связей считались материальным циклом, INSTRUMENT давал ложный MATERIAL_CYCLE | FIXED: раздельные MATERIAL / ITEM_FLOW циклы; сигнальная обратная связь не material path |
+| BCQ-AUD-002 | `BlueprintValidator` | Нет full process-profile verification и typed physical equations; порты доказывают topology, не гидравлику | OPEN: profile qualification, operating envelopes, independent physical oracle |
+| BCQ-AUD-003 | `BlueprintPublicationGate` | Умышленный selected-subgraph фильтр требует строгой closure проверку и запрет suppress dependency | Regression PASS, но cross-blueprint utilities/plant-wide resource arbitration OPEN |
+| BCQ-AUD-004 | `BlueprintLifecycleService` | Конкурентное утверждение могло протечь как generic SQL unique violation | FIXED: typed ALREADY_APPROVED, exactly-one approval DB test |
+| BCQ-AUD-005 | `BlueprintLifecycleService` | Повторное activate идентичной revision/selection создавало новый immutable set | FIXED: ALREADY_ACTIVE, historical set preservation test |
+| BCQ-AUD-006 | `BlueprintLifecycleService` | Site approval based on roles; нет segregation-of-duties, actor audit chain, IdP, provisioning | OPEN; не открывать наружу до security gates |
+| BCQ-AUD-007 | `BlueprintImpactAnalyzer` | Current impact использовал объединённый old+new graph и мог сообщать **старую** перегрузку как новую | FIXED: исторические связи только для reachability; contention from target snapshot |
+| BCQ-AUD-008 | `BlueprintImpactAnalyzer` | `reasons` имеет только одно origin→target объяснение; multiple-cause, upstream/downstream semantics ограничены | PARTIAL; в будущем multi-path provenance и risk classification |
+| BCQ-AUD-009 | `BlueprintCatalogAudit` | Строковый `Measurement` позволял non-sensor equipment быть измерительным источником | FIXED: catalog MEASURE capability и nonblank signal key, P0 InstrumentationBinding ещё OPEN |
+| BCQ-AUD-010 | `BlueprintDraftService` | Save CAS и SHA в порядке, но нет идемпотентного network commandId, backup recovery и migration policy | OPEN; build once without adding broker |
+| BCQ-AUD-011 | `PlantActivationSet` | Исторический pointer уже immutable, но нет machine-readable activation reason, digital sign-off, outbox/event log | OPEN (Operational Integrity) |
+| BCQ-AUD-012 | Production domain | Нет ProcessRun/WorkOrder/MES state, исполнение не следует выводить из engineering selection | DESIGN ONLY, отдельное ТЗ ниже |
+
+### 28.5 Исполняемые тестовые сценарии (positive / negative / concurrent / recovery)
+
+| SC-BCQ | Тип | Oracle | Реализация / gate |
+|---|---|---|---|
+| SC-BCQ-001 | Positive | Create пустой rev1 → Save 99-line rev2; новые данные не изменяют rev1 | `BlueprintBusinessJourneyPostgresTest` PASS |
+| SC-BCQ-002 | Positive | 99 Draft, selected 10; Validate PASS → Approve → Publish → Activate selected | `BlueprintBusinessJourneyPostgresTest` PASS |
+| SC-BCQ-003 | Positive | Revise L037 → Impact exactly L037+L038; none else | `BlueprintBusinessJourneyPostgresTest` PASS |
+| SC-BCQ-004 | Positive | Сохранён rev3, но Site.activeSetId и old snapshot ещё rev2 | `BlueprintBusinessJourneyPostgresTest` PASS |
+| SC-BCQ-005 | Positive | Publish rev3, Activate с expectedPreviousSetId: новая история с previous link | `BlueprintBusinessJourneyPostgresTest` PASS |
+| SC-BCQ-006 | Negative | Нарушенный используемый Boundary/Port блокирует Approval | `BlueprintBusinessJourneyPostgresTest` PASS |
+| SC-BCQ-007 | Negative | Ошибочная revision не может вытеснить действующую | `BlueprintBusinessJourneyPostgresTest` PASS |
+| SC-BCQ-008 | Negative | Unauthorized REVIEW/PUBLISH/ACTIVATE и чужой Site не получают доступ | `BlueprintLifecyclePostgresTest` PASS |
+| SC-BCQ-009 | Negative | 11-я выбранная LINE блокируется server quota | `BlueprintLifecyclePostgresTest` PASS |
+| SC-BCQ-010 | Negative | Non-sensor Measurement и blank signalKey блокируют publication readiness | `BlueprintBusinessCoreContractSmoke` PASS |
+| SC-BCQ-011 | Negative | INSTRUMENT cycle не MATERIAL; ITEM_FLOW cycle отдельно | `BlueprintBusinessCoreContractSmoke` PASS |
+| SC-BCQ-012 | Negative | Before overcommit устранён в After → current Impact contention empty | `BlueprintBusinessCoreContractSmoke` PASS |
+| SC-BCQ-013 | Negative | Re-activate идентичный published target → ALREADY_ACTIVE, без нового Set | `BlueprintBusinessJourneyPostgresTest` PASS |
+| SC-BCQ-014 | Concurrent | 2 Save revN+1 → ровно один success, второй typed conflict | `BlueprintPersistencePostgresTest` PASS |
+| SC-BCQ-015 | Concurrent | 2 Approve одной revision → 1 row, второй ALREADY_APPROVED | `BlueprintBusinessJourneyPostgresTest` PASS |
+| SC-BCQ-016 | Concurrent | 2 Activate с одним pointer → один Set, второй STALE | `BlueprintLifecyclePostgresTest` PASS |
+| SC-BCQ-017 | Recovery | Corrupt snapshot JSON и schema_version → явная ошибка, а не quiet success | `BlueprintPersistencePostgresTest` PASS |
+| SC-BCQ-018 | Recovery | Закрыть Spring ApplicationContext, открыть новый с той же DB → active pointer и revision совпадают; отдельный 99-line DRAFT полностью сохраняет 853 devices, 64 transfers и 14 dependencies | `BlueprintContextRestartPostgresTest` (CI verification required) |
+| SC-BCQ-019 | Recovery | Убить JVM/backend process, запустить заново и сравнить 99-line snapshot/hashes/links | **RED/PLANNED**, отдельный process test |
+| SC-BCQ-020 | Recovery | Restore PostgreSQL backup в чистую базу, проверить Site/Approval/ActivationSet chain | **RED/PLANNED**, disaster recovery gate |
+| SC-BCQ-021 | Fault | Внезапная потеря PostgreSQL внутри activate, ни одной «половинной» activation | **RED/PLANNED**, network/DB fault injection |
+| SC-BCQ-022 | Security | Один actor не может self-approve high-risk изменённый Blueprint, независимо от admin | **RED/PLANNED**, policy/role separation |
+| SC-BCQ-023 | Scale | 100/500/1 000 units: validation/Save/Impact SQL count, heap, latency | **RED/PLANNED**, performance baseline |
+| SC-BCQ-024 | Contracts | Property-based seeded graphs 10 000; media, IDs, version, forbidden cycles | 10 000 seeded graph cases PASS; mutation/shrinking OPEN |
+
+**Уточнение доказательств:** CI PASS относится лишь к фактически выполненным тестам на указанном commit SHA, не к будущему production execution, physical sensor или независимой OT FAT/SAT. Java process restart ≠ Spring context restart. Восстановление без полной остановки JVM не рекламировать как disaster recovery.
+
+### 28.6 Отдельный будущий модуль Production Execution (DESIGN ONLY)
+
+**Строго отделить** Engineering Blueprint revision и Site ActivationSet от реального выполнения производственных операций. Engineering `Activate` выбирает модель процесса в Zavod, но не открывает клапан и не запускает станок.
+
+- `ProductionOrder(orderId,siteId,productId,quantity,unit,dueAt,status)`: DRAFT → RELEASED → IN_PROGRESS → COMPLETED / CANCELLED. Статусы не определяют PLC.
+- `ProcessRun(runId,siteId,activationSetId,blueprintRevision,processUnitId,productionOrderId?,status,startedAt?,finishedAt?,inputLots,outputLots)`: CREATED → READY → RUNNING ↔ PAUSED → COMPLETED / FAILED / CANCELLED. Переходы сервером по expectedRunVersion + permitted actor; нет перехода FAILED→COMPLETED без корректирующего отдельного workflow.
+- `ExecutionEvent(eventId,siteId,runId,eventType,sourceSystem,eventAt,receivedAt,quality,correlationId)`: реальная история производственных событий лишь из доверенного источника; simulated events всегда помечены SIMULATED.
+- `MaterialLot`, `InventoryMovement` и `ResourceReservation` добавлять только после утверждения материального баланса, единиц, жизненного цикла партий и правил конкурентного резервирования. Не переносить платежные/marketplace статусы из других продуктов.
+- `RunReadiness` проверяет инженерный revision, runtime signal binding, availability, permission, work order, validated quantities и safety sign-off. Он не может заменять PLC permissives/interlocks. Выпуск Production Execution требует отдельного сценарного проектирования, JUnit/Testcontainers + evidence реального процесса.
+
+**Не разрабатывать сейчас:** Execution API, Job Scheduler, RabbitMQ/Kafka, OPC UA writes и автоматическое управление физическими процессами. Это будет R2/R3 после качества Engineering Core и real read-only telemetry. Требования PE-001…PE-008 зарезервированы для следующего Scenario Design.
+
+### 28.7 Отдельный будущий слой Operational Integrity (DESIGN ONLY)
+
+Цель: никакая успешная бизнес-операция не теряется и не выполняется дважды после сбоя, повтора HTTP, потери соединения или перезапуска.
+
+| OI-ID | Требование/принцип | Будущая квалификация |
+|---|---|---|
+| OI-001 | Серверные idempotency keys с tenant/site scope, payload hash и saved response | Duplicate request returns same result, changed payload returns conflict |
+| OI-002 | Transactional Outbox в той же PostgreSQL-транзакции, что и state change | Нет «activation записана, event не отправлен» при fault injection |
+| OI-003 | Append-only audit event: actor, site, from→to state, exact rev/hash, reason, timestamp, request ID | Traceable transitions, redaction and retention policy |
+| OI-004 | Lock ordering and isolation for Site/Approval/Asset; retry only retry-safe operations | Two writers cannot both own same activation/asset |
+| OI-005 | Crash/restart recovery: parse+hash+schema validation before restoration | 99-line snapshot, Approval and activation chain match exact baseline |
+| OI-006 | PostgreSQL backup/restore and schema migration rehearsals (no Liquibase yet per decision) | Restore clean DB within documented RPO/RTO, no silent DDL update in PROD |
+| OI-007 | Reconciliation of derived HMI/telemetry projections to immutable Blueprint versions | Stale version shows unknown/needs refresh, never «healthy by default» |
+| OI-008 | Bounded dedup and observation quality: UTC timestamps, sequence, BAD/STALE, provenance | Replayed event does not duplicate business transition |
+| OI-009 | Site-local offline operating envelope and isolation, independent PLC safety | No cloud dependency required for core; no PLC write path |
+| OI-010 | Runbook: failure handling, repair, regression qualification and deployment rollback | Drill performed and evidence archived before PROD GO |
+
+**Техническая стратегия:** PostgreSQL transactional integrity first. Никаких новых брокеров/микросервисов/ML до возникновения реального event-delivery контракта. Исторические `BlueprintRevision` и `PlantActivationSet` уже формируют часть audit evidence, но **не заменяют** журнал переходов с actor/reason/correlationId. Любое удаление физического порта, пересмотр активной конфигурации и отключение связи требуют независимого audit event и эффективного запрета неподтверждённой эксплуатации.
+
+### 28.8 Gates и порядок следующих доработок
+
+- **BCQ-G0 — Process/Rule Review:** BP-001…015, BR-001…032 и SC-BCQ-001…024 имеют явные expected results; все открытые BR решения классифицированы как OPEN и не названы выполненными.
+- **BCQ-G1 — Pure Domain:** RED→GREEN для FlowKind loops, sensor qualification и target-only resource conflicts, seeded 10 000 graph regression.
+- **BCQ-G2 — Real PostgreSQL:** full Create→Validate→Save→Approve→Publish→Activate→Revise; role/ownership/invalid/revision concurrency/approval concurrency/activation concurrency PASS на одном commit.
+- **BCQ-G3 — Recovery:** Spring context restart (1 active qualifying line plus 99-line persisted laboratory graph) + full JVM restart + PostgreSQL backup/restore + crash-in-transaction fault test. Прохождение context-restart **не закрывает** full recovery.
+- **BCQ-G4 — Production decision:** independent engineering review, site RBAC and separation of duties, performance evidence, qualified read-only OT pilot; до тех пор статус **ENGINEERING FOUNDATION VERIFIED**, не `industrial production ready`.
+
+**Следующий приоритет после BCQ-G2:** закрыть пробелы G3 и авторизацию Production R0.6A перед тем, как начинать новые крупные модули. Production Execution/Operational Integrity остаются двумя отдельными future design blocks, не смешиваются с текущей реактивной визуализацией и Smart Focus.

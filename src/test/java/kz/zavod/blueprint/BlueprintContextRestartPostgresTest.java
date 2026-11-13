@@ -2,6 +2,8 @@ package kz.zavod.blueprint;
 
 import java.util.*;
 import kz.zavod.blueprint.domain.ProcessBlueprint;
+import kz.zavod.blueprint.domain.LabBlueprintAdapter;
+import kz.zavod.lab.PlantScenarios;
 import kz.zavod.blueprint.lifecycle.*;
 import kz.zavod.blueprint.persistence.BlueprintDraftService;
 import kz.zavod.studio.StudioBlueprintService;
@@ -36,9 +38,9 @@ class BlueprintContextRestartPostgresTest {
         registry.add("spring.datasource.password",postgres::getPassword);
     }
     private static ApplicationContext firstContext;
-    private static UUID blueprintId;
+    private static UUID blueprintId,plantId;
     private static String siteId,activationId;
-    private static ProcessBlueprint immutableSnapshot;
+    private static ProcessBlueprint immutableSnapshot,plantSnapshot;
 
     @Autowired ApplicationContext context;
     @Autowired SiteRepository sites;
@@ -82,6 +84,18 @@ class BlueprintContextRestartPostgresTest {
         actor("activator");
         activationId=lifecycle.activate(siteId,blueprintId,2,null);
         assertEquals(immutableSnapshot,drafts.loadRevision(blueprintId,2));
+        // A second (unqualified) 99-line DRAFT is persisted on this same Site,
+        // without ever pretending that lab equipment has been approved.
+        var labDraft=studio.create(siteId);
+        plantId=labDraft.id();
+        ProcessBlueprint lab=LabBlueprintAdapter.fromLab(plantId,2,PlantScenarios.generate(99,99));
+        plantSnapshot=studio.saveDraft(siteId,plantId,1,lab);
+        assertEquals(99,plantSnapshot.units().size());
+        assertEquals(64,plantSnapshot.transfers().size());
+        assertEquals(14,plantSnapshot.dependencies().size());
+        assertEquals(853,plantSnapshot.units().stream()
+                .mapToInt(u->u.equipment().size()).sum());
+        assertEquals(plantSnapshot,drafts.loadRevision(plantId,2));
     }
 
     @Test @Order(2)
@@ -91,6 +105,14 @@ class BlueprintContextRestartPostgresTest {
         assertNotNull(blueprintId);
         assertEquals(immutableSnapshot,drafts.loadRevision(blueprintId,2));
         assertEquals(immutableSnapshot,drafts.loadLatest(blueprintId));
+        assertNotNull(plantId);
+        assertEquals(plantSnapshot,drafts.loadRevision(plantId,2),
+                "All 99 engineering graphs, 64 transfers, 14 dependencies and assets survive context restart");
+        assertEquals(99,drafts.loadLatest(plantId).units().size());
+        assertEquals(64,drafts.loadLatest(plantId).transfers().size());
+        assertEquals(14,drafts.loadLatest(plantId).dependencies().size());
+        assertEquals(853,drafts.loadLatest(plantId).units().stream()
+                .mapToInt(u->u.equipment().size()).sum());
         actor("viewer");
         var active=lifecycle.active(siteId);
         assertEquals(activationId,active.id());
