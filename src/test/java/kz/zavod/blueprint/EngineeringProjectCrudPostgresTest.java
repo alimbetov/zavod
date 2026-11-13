@@ -131,6 +131,10 @@ class EngineeringProjectCrudPostgresTest {
                 .content("{\"name\":\"   \"}"))
                 .andExpect(status().isUnprocessableEntity());
         String id=create(site,"A").get("projectId").asText();
+        mvc.perform(put("/api/v1/sites/{site}/projects/{id}",site,id)
+                .header("X-Zavod-Dev-Write","true").contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("name","Without version"))))
+                .andExpect(status().isUnprocessableEntity());
         mvc.perform(delete("/api/v1/sites/{site}/projects/{id}",site,id)
                 .header("X-Zavod-Dev-Write","true").param("expectedVersion","8"))
                 .andExpect(status().isConflict());
