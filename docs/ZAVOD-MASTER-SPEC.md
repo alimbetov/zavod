@@ -1431,3 +1431,60 @@ spring.datasource.hikari.connection-timeout=30000
 | AUD-020 | OPEN | Нет интегрированного React Studio, HMI/MES и Industrial Edge |
 
 **Решение:** разработка ведётся только в `main`, без новых рабочих веток. Эти статусы относятся к инженерному прототипу, а не к production-licensed control system. Не маркировать AUD-008, AUD-010, AUD-012, AUD-015, AUD-018, AUD-019, AUD-020 как закрытые. Зелёный CI подтверждает исполненные контрактные тесты, но не промышленную квалификацию.
+
+
+---
+
+## 20. Zavod Intelligence — ML / Optimization Architecture (future, NOT P0)
+
+**Статус:** стратегический контракт, DESIGN ONLY. **Ничего из INT-001…INT-008 не реализовано и не считается обязательством текущего R0.5/P0.** Zavod — Physical Process OS; инженерный **Blueprint** является единственным источником идентичности оборудования, процессов, портов, сигналов и ревизий. Intelligence — дополнительные вычислительные функции на основе квалифицированного Blueprint, а не новая независимая модель завода.
+
+### 20.1 Последовательность внедрения (строгие prerequisites)
+
+\`Engineering Builder → Smart Line Designer → SCADA/Telemetry → Production Intelligence → Predictive Maintenance → Production Optimizer\`.
+
+1. **Engineering Builder (R0.5 / R0.6)**: физическая модель и ревизии, typed port/flow, safe validation, resource dependencies, server-owned site permissions, draft/review/publish/activate.
+2. **Smart Line Designer (R0.6)**: React + TypeScript + React Flow, golden hydroponics/packaging/pump fixtures, Save→Reopen→Validate и virtual HMI.
+3. **SCADA / Telemetry (после OT gate)**: site-local Edge, OPC UA / Modbus TCP **read-only**, signal quality + timestamps, alarms/historian, stale/unknown as first-class; механизмы PLC/safety не замещаем.
+4. **Production Intelligence**: корректные нормализованные фактические показатели, статистические правила и explainable anomaly/production-loss inference; сначала deterministic baselines, **без обязательного ML**.
+5. **Predictive Maintenance**: failure/maintenance event taxonomy, model validation with time-series data and holdout plants, confidence and uncertainty; никаких невалидированных «вероятность аварии 99%».
+6. **Production Optimizer**: offline what-if и предложения по scheduling, ресурсам, буферам/ограничениям; ограниченный supervisory intent в реальном процессе только после отдельного site-specific safety governance / FAT/SAT и PLC-side permissives.
+
+**Никакого переключения управляющих реле, насосов, клапанов или уставок из ML/LLM.** Вывод может быть только объяснением, оценкой риска или рекомендацией для уполномоченного человека. Даже после появления optimizer прямые writes в PLC не входят в базовый продукт.
+
+### 20.2 Унифицированные data contracts
+
+- \`BlueprintContext(siteId, blueprintId, blueprintRevision, activationSetId, processUnitId, equipmentId, equipmentTemplateKey/version, signalKey, unit, processProfileKey/version)\` — typed, immutable references; чужие siteId запрещены.
+- \`Observation(signalKey, value, unit, sourceTimestamp, receivedTimestamp, quality, provenance, sequence)\`; quality \`GOOD/UNCERTAIN/BAD/STALE\`, timestamps в UTC; derived values явно помечаются.
+- \`ProcessExecution(executionId, activationSetId, unitId, start/finish, material/product quantities, qualityOutcome)\` — только после появления MES и проверенной политики единиц измерения.
+- \`MaintenanceEvent(eventId, assetId, failureModeCode, occurrenceAt, repairAt, labelSource)\` — события с доказанным происхождением и классификацией для supervised learning.
+- \`FeatureSnapshot(featureVersion, observationWindow, extractionTime, sourceReferences, missingQualityFlags)\` — lineage каждого признака и окна данных.
+- \`InferenceResult(modelId, modelVersion, featureVersion, blueprintRevision, confidence, explanation, limitations, createdAt, validityWindow, recommendationStatus)\`; \`recommendationStatus\` никогда не означает «команда выполнена».
+- \`OptimizationProposal(scenarioId, activationSetId, objective, constraintSet, proposedSchedule, estimatedBenefit, feasibilityStatus, reviewedBy)\` — не исполняется автоматически.
+
+**Разделение моделей:** инженерная топология Blueprint ≠ реальная телеметрия ≠ утверждённые производственные результаты ≠ ML prediction. Витрины признаков можно строить из historian/MES только с явными версиями, качеством наблюдений и provenance.
+
+### 20.3 Реестр требований и независимых тестов
+
+| ID | Стадия | Требование (будущее) | Acceptance contract |
+|---|---|---|---|
+| **INT-001** | SCADA→Intelligence | Единая нормализация сигналов с quality, timestamp, unit, site/Blueprint lineage; bad/stale не используются как хорошие обучающие значения | SC-INT-001: stale/unknown and cross-site telemetry rejection |
+| **INT-002** | Intelligence | Feature Registry: версионированные статистики и временные окна (mean, trend, variance, downtime), без скрытого leakage из будущего | SC-INT-002: time-bound features, deterministic replay, no label leakage |
+| **INT-003** | Intelligence | Обнаружение аномалий сначала rules/statistics; optional baseline ML с uncertainty и объяснением | SC-INT-003: supervised false-positive rate and drift monitoring |
+| **INT-004** | Maintenance | Taxonomy failure modes + журнал ремонтов, dataset lineage; оценка риска только на валидационных данных | SC-INT-004: holdout by time and plant, recall/precision and calibration gates |
+| **INT-005** | Intelligence | Объяснение влияния отказа/дефекта на связанные ProcessUnits по BlueprintDiff/Impact + actual events | SC-INT-005: evidence trace from signal→asset→dependent units and data-quality flags |
+| **INT-006** | Optimizer | Offline schedule / energy / resource what-if с математическими ограничениями, материалами, емкостями и единицами | SC-INT-006: constraint-feasible plan or explicit infeasibility, no invented throughput |
+| **INT-007** | Cross-cutting | Model governance: approve/model registry, explicit model versions, rollback, reproducible training; bias/leakage/drift audit | SC-INT-007: version lock, canary, reproducibility and rollback |
+| **INT-008** | OT safety | Strict recommendation-only default; role approval, audit and OT safety boundary; prohibited direct PLC command path | SC-INT-008: invariant no PLC write under model error, corrupt data, drift or offline Edge |
+
+**Качество/метрики:** определить false positive budget, data completeness, telemetry lag, precision/recall, per-site domain drift и ROI **до** пилота. Нельзя объявлять «предсказание поломок» при отсутствии размеченных отказов и исторических данных. Примеры гидропоники, насосов, фасовки и бетонного производства — независимые пилотные наборы, не общая универсальная обучающая выборка по умолчанию.
+
+### 20.4 Технологии, лицензии и deployment boundary
+
+Начало: Spring Boot / Java 21 с deterministic rules, rolling aggregates, обычным SQL/PostgreSQL и отдельными feature contracts; **отдельный ML microservice и Python-кластер не нужны** до подтверждённой ценности. Кандидаты к будущему исследованию: Tribuo (Java ML), ONNX Runtime (model inference), Timefold Solver (constraint optimization), Apache Commons Math. Версии, лицензии и применимость каждой зависимости должны проходить release license/SBOM audit. Предпочтение — бесплатные permissive OSS (Apache-2.0, MIT/BSD/ISC по условиям); платные планировщики и обязательные коммерческие SDK не вводить.
+
+Deployment при offline площадке: Blueprint и local Edge продолжают работу без cloud; Intelligence может быть отключён полностью, не влияя на основную инженерную модель, SCADA display или PLC safety logic. ML не получает credentials для контроллеров и не вызывает никакие физические управляющие endpoints.
+
+### 20.5 Definition of Done — будущий Intelligence release
+
+Сначала утверждённые наблюдения и жизненный цикл Blueprint; затем 1–2 статистических сценария с измеримой точностью и человеческой проверкой; потом ML (baseline vs heuristic comparisons, holdouts и drift); затем offline optimizer только с реальными constraints. Во всех результатах сохранять input provenance, model version, uncertainty, reviewer и сценарий. **До закрытия R0.5Q/P0 и R0.6 visual E2E все INT-001…INT-008 — PLANNED, а не DONE.**
