@@ -26,10 +26,15 @@ public final class BlueprintHardeningSmoke {
         var e=line("L055",List.of(new ResourceUse("compressor",1)));
         var unrelated=line("L099",List.of());
         var links=List.of(new Dependency("L037","L040"),new Dependency("L040","L043"));
-        ProcessBlueprint baseline=new ProcessBlueprint(id,1,10,List.of(a,b,c,d,e,unrelated),
+        List<ProcessUnit> goldenUnits=new ArrayList<>(List.of(a,b,c,d,e,unrelated));
+        for(int i=0;i<93;i++)goldenUnits.add(line("OTHER-"+i,List.of()));
+        check(goldenUnits.size()==99,"Exactly 99 lines in golden impact fixture");
+        ProcessBlueprint baseline=new ProcessBlueprint(id,1,10,goldenUnits,
                 List.of(asset),List.of(),links);
         var aChanged=line("L037",List.of(new ResourceUse("compressor",2)));
-        ProcessBlueprint modified=new ProcessBlueprint(id,2,10,List.of(aChanged,b,c,d,e,unrelated),
+        List<ProcessUnit> changedUnits=new ArrayList<>(goldenUnits);
+        changedUnits.set(0,aChanged);
+        ProcessBlueprint modified=new ProcessBlueprint(id,2,10,changedUnits,
                 List.of(asset),List.of(),links);
         var impact=BlueprintImpactAnalyzer.analyzeChange(baseline,modified);
         check(impact.affectedUnits().equals(Set.of("L037","L040","L043","L012","L055")),
@@ -40,12 +45,26 @@ public final class BlueprintHardeningSmoke {
         var equipmentChanged=new Equipment("E1","water-pump",1,List.of());
         var aMechanical=new ProcessUnit(a.id(),a.kind(),a.profileKey(),
                 List.of(equipmentChanged),a.connections(),a.boundaries(),a.resources(),a.measurements(),false);
-        ProcessBlueprint mechanical=new ProcessBlueprint(id,2,10,List.of(aMechanical,b,c,d,e,unrelated),
+        List<ProcessUnit> mechanicalUnits=new ArrayList<>(goldenUnits);
+        mechanicalUnits.set(0,aMechanical);
+        ProcessBlueprint mechanical=new ProcessBlueprint(id,2,10,mechanicalUnits,
                 List.of(asset),List.of(),links);
         var localImpact=BlueprintImpactAnalyzer.analyzeChange(baseline,mechanical);
         check(localImpact.affectedUnits().equals(Set.of("L037","L040","L043")),
                 "Non-resource equipment change must not involve compressor peers");
         check(BlueprintDiff.compare(baseline,baseline).changedUnitIds().isEmpty(),"Identical snapshots yield empty diff");
+        List<ProcessUnit> reversedUnits=new ArrayList<>(goldenUnits);
+        Collections.reverse(reversedUnits);
+        var permuted=new ProcessBlueprint(id,2,10,reversedUnits,List.of(asset),List.of(),links);
+        check(BlueprintDiff.compare(baseline,permuted).changedUnitIds().isEmpty(),
+                "Reordering units without changing topology does not create impact");
+        var withoutL040=new ArrayList<>(goldenUnits);
+        withoutL040.removeIf(u->u.id().equals("L040"));
+        var removed=new ProcessBlueprint(id,2,10,withoutL040,List.of(asset),List.of(),links);
+        var removalImpact=BlueprintImpactAnalyzer.analyzeChange(baseline,removed);
+        check(removalImpact.affectedUnits().contains("L040") && removalImpact.affectedUnits().contains("L043"),
+                "Removal keeps historical downstream dependency visibility");
+
 
         List<ProcessUnit> consumers=new ArrayList<>();
         for(int i=0;i<1000;i++)consumers.add(line("L"+i,List.of(new ResourceUse("hub",1))));
