@@ -20,7 +20,7 @@
 ## Рабочий процесс
 
 Scenario Design → RED → Test Review → GREEN → Regression → Independent Review → Draft PR → Merge.  
-Изменения проекта только в рабочих ветках, \`main\` — базовая ветка после review.
+Изменения проекта только в рабочих ветках, `main` — базовая ветка после review.
 
 ## Действующие PR
 
