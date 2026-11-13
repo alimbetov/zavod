@@ -28,8 +28,8 @@ public final class TelemetryContracts {
             // The database stores staleness in milliseconds. A positive
             // sub-millisecond duration would round to zero and become invalid
             // or silently disable expiry when the mapping is reloaded.
-            if(blueprintRevision<1||staleAfter.toMillis()<1
-                    ||staleAfter.compareTo(Duration.ofDays(7))>0)
+            if(blueprintRevision<1||staleAfter.isNegative()||staleAfter.isZero()
+                    ||staleAfter.compareTo(Duration.ofDays(7))>0||staleAfter.toMillis()<1)
                 throw new IllegalArgumentException("INVALID_SIGNAL_DEFINITION");
         }
     }
