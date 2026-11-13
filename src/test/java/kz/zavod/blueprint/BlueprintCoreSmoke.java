@@ -47,6 +47,15 @@ public final class BlueprintCoreSmoke {
                 "hydroponic feedback loop explicitly flagged as unqualified");
         ok(BlueprintReadiness.blockers(hydro,EquipmentCatalog.standard()).stream().anyMatch(x->x.code().equals("RECIRCULATION_UNQUALIFIED")),
                 "hydroponic loop cannot be published merely by toggling a flag");
+        var mismatchedPorts=new Equipment("pump-invalid","water-pump",1,List.of(
+                new Port("water-in",Direction.IN,FlowKind.MATERIAL,"cement",1,1),
+                new Port("water-out",Direction.OUT,FlowKind.MATERIAL,"water",0,1)));
+        var onePump=new ProcessUnit("unit",UnitKind.STATION,"continuous.pump.v1",
+                List.of(mismatchedPorts),List.of(),List.of(),List.of(),List.of(),false);
+        var invalidCatalog=new ProcessBlueprint(UUID.randomUUID(),1,1,List.of(onePump),List.of(),List.of(),List.of());
+        ok(BlueprintCatalogAudit.inspect(invalidCatalog,EquipmentCatalog.standard()).stream()
+                .anyMatch(x->x.code().equals("TEMPLATE_PORT_SCHEMA_MISMATCH")),
+                "template port may not silently change medium even with same key");
         rejects(()->BlueprintImpactAnalyzer.analyze(plant,Set.of("UNKNOWN")),"unknown unit change rejected");
         System.out.println("PASS "+count+" Blueprint core checks");
     }
