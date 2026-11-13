@@ -206,6 +206,35 @@ class BlueprintBusinessJourneyPostgresTest {
         assertEquals(2,drafts.loadRevision(f.id(),2).revision());
     }
 
+
+    @Test
+    void databaseRejectsFinalSitePointerAndActivationInsertRollsBackAtomically() {
+        Fixture f=setup(3);
+        actor("reviewer");lifecycle.approve(f.siteId(),f.id(),2,f.selected());
+        actor("publisher");lifecycle.publish(f.siteId(),f.id(),2);
+        actor("activator");
+        // Deterministic PostgreSQL failpoint: forbid any update to active_set_id.
+        // ActivationSet insert flushes first, then site pointer update must fail,
+        // forcing the entire transaction to roll back.
+        jdbc.execute("alter table site add constraint bcq_fault_active_pointer check ("+
+                "site_id <> '"+f.siteId()+"' or active_set_id is null)");
+        try {
+            assertThrows(org.springframework.dao.DataAccessException.class,
+                    ()->lifecycle.activate(f.siteId(),f.id(),2,null));
+            assertEquals(0,sets.countBySiteId(f.siteId()),
+                    "No orphan ActivationSet is allowed after failed final pointer commit");
+            assertNull(sites.findById(f.siteId()).orElseThrow().activeSetId(),
+                    "The last good Site configuration must survive transaction rollback");
+            assertEquals(BlueprintApprovalEntity.State.PUBLISHED,
+                    approvals.findById(f.id()+":2").orElseThrow().state());
+        } finally {
+            jdbc.execute("alter table site drop constraint bcq_fault_active_pointer");
+        }
+        String afterRecovery=lifecycle.activate(f.siteId(),f.id(),2,null);
+        assertEquals(afterRecovery,lifecycle.active(f.siteId()).id());
+        assertEquals(1,sets.countBySiteId(f.siteId()));
+    }
+
     @Test
     void concurrentApprovalIsExactlyOnceAndConflictIsDomainControlled() throws Exception {
         Fixture f=setup(3);
