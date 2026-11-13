@@ -78,7 +78,7 @@ test('TF-03: real PostgreSQL simulated telemetry is revision-bound, visible and 
   await page.getByRole('button',{name:'Сохранить Draft'}).click();
   await expect(page.getByText('✓ Сохранено')).toBeVisible();
   const ref=await page.evaluate(()=>window.localStorage.getItem('zavod.studio.local-project'));
-  const {siteId,blueprintId}=JSON.parse(ref!) as {siteId:string;blueprintId:string};
+  const {site:siteId,blueprintId}=JSON.parse(ref!) as {site:string;blueprintId:string};
   const saved=await (await page.request.get('/api/v1/sites/'+siteId+'/blueprints/'+blueprintId)).json();
   expect(saved.revision).toBe(2);
   const unit=saved.units.find((u:{id:string})=>u.id==='CP01-MIX');
