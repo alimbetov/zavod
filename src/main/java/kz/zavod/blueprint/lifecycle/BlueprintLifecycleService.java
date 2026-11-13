@@ -9,6 +9,8 @@ import kz.zavod.catalog.EquipmentCatalog;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
@@ -46,8 +48,14 @@ public class BlueprintLifecycleService {
                 "PUBLISH_PREFLIGHT_BLOCKED:"+findings.get(0).code()+":"+findings.get(0).entity());
         String key=key(blueprintId,revision);
         if(approvals.existsById(key))throw new BlueprintLifecycleException("ALREADY_APPROVED");
-        approvals.saveAndFlush(new BlueprintApprovalEntity(siteId,blueprintId.toString(),revision,
-                encode(selectedUnitIds),actor));
+        try {
+            approvals.saveAndFlush(new BlueprintApprovalEntity(siteId,blueprintId.toString(),revision,
+                    encode(selectedUnitIds),actor));
+        } catch(DataIntegrityViolationException | OptimisticLockingFailureException ex) {
+            // Two reviewers may pass the pre-check concurrently: the database owns
+            // uniqueness, and callers receive a stable business conflict.
+            throw new BlueprintLifecycleException("ALREADY_APPROVED");
+        }
     }
 
     @Transactional
@@ -77,6 +85,14 @@ public class BlueprintLifecycleService {
                 .orElseThrow(()->new BlueprintLifecycleException("NOT_PUBLISHED"));
         if(!siteId.equals(approved.siteId())||approved.state()!=BlueprintApprovalEntity.State.PUBLISHED)
             throw new BlueprintLifecycleException("NOT_PUBLISHED");
+        if(site.activeSetId()!=null) {
+            PlantActivationSetEntity current=sets.findById(site.activeSetId())
+                    .orElseThrow(()->new BlueprintLifecycleException("INVALID_ACTIVATION_POINTER"));
+            if(current.blueprintId().equals(blueprintId.toString())
+                    &&current.revisionNo()==revision
+                    &&current.selectedUnitsJson().equals(approved.selectedUnitsJson()))
+                throw new BlueprintLifecycleException("ALREADY_ACTIVE");
+        }
         Set<String> selected=decode(approved.selectedUnitsJson());
         var blueprint=drafts.loadRevision(blueprintId,revision);
         var findings=BlueprintPublicationGate.preflight(blueprint,selected,site.maxActiveLines(),catalog);
