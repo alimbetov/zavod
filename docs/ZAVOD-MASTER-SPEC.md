@@ -2468,7 +2468,7 @@ Secrets, certificates and remote maintenance access must follow the enterprise O
 | BP-014 | Real production execution | Future Execution module | Approved engineering model + site safety commissioning | **NOT IMPLEMENTED**; activation is not run/start |
 | BP-015 | Operational integrity and audit | Future Integrity module | Production event and persistent transaction | **NOT IMPLEMENTED**; outbox/replay/forensic audit pending |
 
-### 28.3 Нормативные бизнес-инварианты BR-001…BR-032
+### 28.3 Нормативные бизнес-инварианты BR-001…BR-033
 
 | BR | Правило, запрещённое нарушение | Текущее доказательство / статус |
 |---|---|---|
@@ -2504,6 +2504,7 @@ Secrets, certificates and remote maintenance access must follow the enterprise O
 | **BR-030** | Restart приложения оставляет DB Blueprint revision и active pointer неизменными | Spring ApplicationContext restart regression including 99-line saved laboratory Blueprint (853 devices, 64 transfers, 14 dependencies); **полный JVM/process restart OPEN** |
 | **BR-031** | Реальный production API требует identity, role EDITOR, независимый Audit Trail и four-eyes | OPEN (действует deny-by-default, dev-local только loopback) |
 | **BR-032** | Physical Execution не запускается из инженерного `Activate`; нет PLC write | Контракт/prototype boundary PASS; field OT evidence OPEN |
+| **BR-033** | `Site.activeSetId` и `PlantActivationSet.blueprintId` обязаны относиться к тому же Site; повреждённый межплощадочный pointer не раскрывается и не используется для новой активации | RED commit `f2e12b78` (ошибка воспроизведена) → GREEN `14c66394` (PostgreSQL PASS); OI-011 |
 
 **Аудиторское замечание:** \`ADMIN\` сейчас может выполнять REVIEWER/PUBLISHER/ACTIVATOR в одном лице; это не нарушает текущие unit-тесты, но **не соответствует будущему правилу независимого инженерного утверждения**. Для промышленной эксплуатации нужен rule-maker ≠ approver для safety-critical изменений и аудит личности, а не только имени из Test SecurityContext.
 
@@ -2553,6 +2554,7 @@ Secrets, certificates and remote maintenance access must follow the enterprise O
 | SC-BCQ-023 | Scale | 100/500/1 000 units: validation/Save/Impact SQL count, heap, latency | **RED/PLANNED**, performance baseline |
 | SC-BCQ-024 | Contracts | Property-based seeded graphs 10 000; media, IDs, version, forbidden cycles | 10 000 seeded graph cases PASS; mutation/shrinking OPEN |
 | SC-BCQ-025 | Fault | PostgreSQL отклоняет обновление Site.activeSetId после вставки нового ActivationSet; обе операции откатываются атомарно | `BlueprintBusinessJourneyPostgresTest.databaseRejectsFinalSitePointerAndActivationInsertRollsBackAtomically` PASS; потеря сети/процесса ещё OPEN |
+| SC-BCQ-026 | Negative / Integrity | `Site.activeSetId` намеренно указывает на чужой `PlantActivationSet`; read и activate обязаны отклонить этот pointer | `BlueprintBusinessJourneyPostgresTest.corruptedActivePointerAcrossSitesIsAlwaysRejected` PASS после RED→GREEN |
 
 **Уточнение доказательств:** CI PASS относится лишь к фактически выполненным тестам на указанном commit SHA, не к будущему production execution, physical sensor или независимой OT FAT/SAT. Java process restart ≠ Spring context restart. Восстановление без полной остановки JVM не рекламировать как disaster recovery.
 
@@ -2589,12 +2591,112 @@ Secrets, certificates and remote maintenance access must follow the enterprise O
 
 ### 28.8 Gates и порядок следующих доработок
 
-- **BCQ-G0 — Process/Rule Review:** BP-001…015, BR-001…032 и SC-BCQ-001…025 имеют явные expected results; все открытые BR решения классифицированы как OPEN и не названы выполненными.
+- **BCQ-G0 — Process/Rule Review:** BP-001…015, BR-001…033 и SC-BCQ-001…026 имеют явные expected results; все открытые BR решения классифицированы как OPEN и не названы выполненными.
 - **BCQ-G1 — Pure Domain:** RED→GREEN для FlowKind loops, sensor qualification и target-only resource conflicts, seeded 10 000 graph regression.
 - **BCQ-G2 — Real PostgreSQL:** full Create→Validate→Save→Approve→Publish→Activate→Revise; role/ownership/invalid/revision concurrency/approval concurrency/activation concurrency PASS на одном commit.
-- **BCQ-G3 — Recovery:** Spring context restart (1 active qualifying line plus 99-line persisted laboratory graph), PostgreSQL CHECK fault-injection transactional rollback (PASS), затем full JVM restart, PostgreSQL backup/restore и connection-loss fault test (OPEN). Прохождение context-restart **не закрывает** full recovery.
+- **BCQ-G3 — Recovery:** Spring context restart (1 active qualifying line plus 99-line persisted laboratory graph), PostgreSQL CHECK fault-injection rollback, separate JVM `SIGKILL → new JVM verify` и `pg_dump → pg_restore into clean DB → new JVM verify` **PASS** (GitHub Actions `bcq-g3-process-recovery`). Остаются **OPEN** connection loss / crash-in-flight transaction, RPO/RTO operational drill, migration/rollback and audit/outbox integrity.
 - **BCQ-G4 — Production decision:** independent engineering review, site RBAC and separation of duties, performance evidence, qualified read-only OT pilot; до тех пор статус **ENGINEERING FOUNDATION VERIFIED**, не `industrial production ready`.
 
-**Контроль фактического выполнения (2026-11-13):** PostgreSQL/JUnit 19 tests, 0 failures/errors; separate 13 independent Java business assertions, 47 Blueprint core, 30 hardening, 33 engineering property checks и 10 000 seeded scenarios. Дополнительно проверен rollback при ошибке конечной операции Site pointer. Протокол RED: GitHub Actions commit `8e1dc9d4` с ожидаемым падением `BR-025: instrumentation feedback is not a material cycle`; GREEN commits `ea8225c5`, `df6e98b8`, `785c529d`, `716cb2c8` с целевыми исправлениями и регрессией. **Это независимые тестовые оракулы и техническое ревью кода, а не подписанное внешним экспертом заключение.** Независимая инженерная квалификация и отдельный OT-аудит перед real plant остаются OPEN.
+**Контроль фактического выполнения (2026-11-13, commit `14c66394`):** Maven/JUnit 25 test methods, 0 failures/errors (включая 5 JUnit-адаптеров прежних pure smoke tests); 13 независимых Java business assertions, 47 Blueprint core, 30 hardening, 33 engineering property checks и 10 000 seeded scenarios. См. структурное JaCoCo в §29; обёртки не увеличивают число независимых тестовых оракулов. Дополнительно проверен rollback при ошибке конечной операции Site pointer. Протокол RED: GitHub Actions commit `8e1dc9d4` с ожидаемым падением `BR-025: instrumentation feedback is not a material cycle`; GREEN commits `ea8225c5`, `df6e98b8`, `785c529d`, `716cb2c8` с целевыми исправлениями и регрессией. **Это независимые тестовые оракулы и техническое ревью кода, а не подписанное внешним экспертом заключение.** Независимая инженерная квалификация и отдельный OT-аудит перед real plant остаются OPEN.
 
 **Следующий приоритет после BCQ-G2:** закрыть пробелы G3 и авторизацию Production R0.6A перед тем, как начинать новые крупные модули. Production Execution/Operational Integrity остаются двумя отдельными future design blocks, не смешиваются с текущей реактивной визуализацией и Smart Focus.
+
+
+---
+
+## 29. Zavod Core Passport — фактическая функциональность, измеренное покрытие тестами и BCQ-G3 Operational Integrity
+
+**Актуальная верифицированная база:** ветка `main`, commit `14c663945d9cf638176a2d4f2e7eea8eca636e9c` (2026-11-13); workflow `blueprint-r05` run [43400594412](https://github.com/alimbetov/zavod/actions/runs/43400594412) PASS, `bcq-g3-process-recovery` run [43400594111](https://github.com/alimbetov/zavod/actions/runs/43400594111) PASS, `catalog-smoke` и `plant-scenario-lab` на том же SHA PASS. Числа ниже — **фактически измеренные**, а не оценки.
+
+### 29.1 Миссия ядра, границы доверия и модели состояния
+
+**Zavod Engineering Core** обеспечивает создание, структурную квалификацию, версионирование, проверку последствий, согласование, публикацию и выбор активной **инженерной модели физического процесса**. Содержимое инженерного Blueprint — source of truth для будущих HMI/MES, а не PLC-контроллер. Никаких физических команд насосам, клапанам или interlock в этом ядре нет.
+
+**Три разделённых агрегата:** (1) immutable `ProcessBlueprint` в PostgreSQL с последовательными ревизиями; (2) `BlueprintApproval` от `ABSENT` к `APPROVED` и `PUBLISHED` для точного `blueprintId+revision+selection`; (3) `Site.activeSetId` со ссылкой на immutable `PlantActivationSet`, который сохраняет предыдущий `previousSetId`. Сохранение новой ревизии не переключает действующий набор. `Activate` — не запуск физического технологического процесса.
+
+Реализованные Java-пакеты/функции:
+
+| Подсистема | Классы | Бизнес-функция и контроль |
+|---|---|---|
+| Equipment Catalog | `catalog.EquipmentCatalog/EquipmentType/ConnectionRules/IndustryProfile` | 15 стандартных version-pinned типов, capabilities, typed ports, допустимые соединения и отраслевые профили |
+| Engineering Properties | `engineering.EngineeringUnits/Quantity/PropertyDefinition/Value/Audit` | Размерности, перевод единиц (в том числе affine °C↔K), источники/предположения, range и evidence audit |
+| Engineering Model | `blueprint.domain.ProcessBlueprint` | LINE/CIRCUIT/STATION/ZONE, EquipmentInstance, Port, Connection, Boundary, Measurement, Transfer, Dependency, SharedAsset |
+| Validation / Readiness | `BlueprintValidator/BlueprintCatalogAudit/ResourcePolicyValidator/BlueprintReadiness` | Направление, тип/medium, cardinality, циклы MATERIAL/ITEM_FLOW, разрешения физического boundary, resource conflicts, доказанные sensor capabilities и блокировка неверной публикации |
+| Diff / Impact | `BlueprintDiff/BlueprintImpactAnalyzer` | Semantic ID-based diff, changedUnits, downstream reachability через предыдущие и новые связи, актуальные resource conflicts только по новой ревизии |
+| Publication preflight | `BlueprintPublicationGate/BlueprintActivationPolicy` | SelectedUnit closure, межлинейные зависимости, server-owned active line quota, readiness subset, no side effects |
+| Persistence | `persistence.BlueprintDraftService/RevisionEntity/HeadEntity` | PostgreSQL `blueprint.v2` и историческое чтение `v1`, SHA-256 check, append-only snapshot, CAS и controlled conflict |
+| Lifecycle | `lifecycle.BlueprintLifecycleService/*Entity/*Repository` | Site/Role проверка, `Approve→Publish→Activate`, PESSIMISTIC lock site, previous pointer, one-approval constraint, ALREADY_ACTIVE, проверка Site ownership active set |
+| Studio Bridge (DEV) | `studio.StudioDevController/BlueprintService/LayoutService` | Catalog/Draft/Validate/Impact и независимая Canvas ViewLayout revision; `dev-local` только loopback, production HTTP API закрыт |
+| Synthetic laboratory | `lab.PlantScenarios/PlantGraph/VirtualPlantSimulator` | Детерминированные 1/10/50/99 graph/abstract work units, **не** физическая производственная симуляция |
+
+**Не реализовано как production capability:** визуальный React Studio, real historian/SCADA/MES, physical equations, real OEM-qualified test fixtures, производственные исполнения `ProcessRun`, full audit/outbox/idempotent command log, global site-to-site shared asset arbitration, production external IdP, physical PLC write. `dev-local` нельзя выставлять через reverse proxy.
+
+### 29.2 Доказанная проверка функционального поведения
+
+**Тестовая архитектура на baseline commit:**
+- 25 Maven/JUnit test methods **PASS**, смешанные pure-unit и JPA/Testcontainers PostgreSQL. Пять JUnit-методов вызывают **те же существующие** pure smoke-сценарии, что и отдельный shell script; это увеличивает измеряемое покрытие, **не** количество независимых логических оракулов.
+- Отдельно исполняются: 47 core assertions, 30 hardening, 33 engineering property, 13 independent business assertions; 10 000 seeded property scenarios с ожидаемыми ошибками. Нельзя объявлять их 10 123 независимыми JUnit test cases или равными реальным 10 000 устройствам.
+- 4 CI workflows: `catalog-smoke`, `plant-scenario-lab`, `blueprint-r05` (Maven/JUnit, real Testcontainers PostgreSQL + JaCoCo), `bcq-g3-process-recovery` (отдельный PostgreSQL контейнер, Java SIGKILL, backup/restore).
+
+**Обязательный доказанный E2E на реальной PostgreSQL:** создать 99-line Draft; сохранить rev2; пройти `Validate → Approve(selected10) → Publish → Activate`; изменить оборудование линии L037 в rev3; Impact содержит L037/L038; до новой активации указатель остаётся на rev2; затем явно одобрить/опубликовать/активировать rev3 с expected previous set, не изменяя rev2. Error path: неправильный physical port не проходит preflight и не меняет активную ревизию. Concurrency: Save, Approve, Activate — отдельные конкурентные тесты. PostgreSQL CHECK fault injection доказывает atomic rollback когда обновление конечного Site pointer не удалось. Дополнительно RED `f2e12b78` выявил возврат чужого ActivationSet через повреждённый Site pointer; GREEN `14c66394` предотвращает cross-site read/reuse.
+
+**Граница доказательства:** DB-записи и бизнес-статусы проверены, но нет сквозного browser Playwright, реального PLC, нормативной безопасности оборудования, электронных подписей или оценки эксплуатационного SLA.
+
+### 29.3 Измеренная JaCoCo-метрика (не считать метрикой выполнения BR)
+
+`mvn verify`, JaCoCo `0.8.13`, Java 21, GitHub run `43400594412`. Структурный отчёт включает production-классы, которые выполняются Maven/JUnit (pure smoke также вызываются JUnit-адаптерами). Значение ниже относится **к этому commit**, не к будущим изменённым веткам.
+
+| Объект | Lines covered | Branches covered |
+|---|---:|---:|
+| **Все production-классы (JaCoCo TOTAL)** | **1 078 / 1 276 = 84,5%** | **575 / 986 = 58,3%** |
+| `BlueprintLifecycleService` | 86/89 = 96,6% | 31/42 = 73,8% |
+| `BlueprintValidator` | 102/105 = 97,1% | 119/168 = 70,8% |
+| `BlueprintPublicationGate` | 25/28 = 89,3% | 22/30 = 73,3% |
+| `BlueprintImpactAnalyzer` | 85/85 = 100% | 66/78 = 84,6% |
+| `BlueprintDraftService` | 34/42 = 81,0% | 14/18 = 77,8% |
+| `BlueprintReadiness` | 14/14 = 100% | 7/8 = 87,5% |
+| `EngineeringUnits` | 33/34 = 97,1% | 8/8 = 100% |
+| `StudioLayoutService` | 31/35 = 88,6% | 9/14 = 64,3% |
+| `StudioBlueprintService` | 29/29 = 100% | 3/4 = 75,0% |
+
+**Вывод:** покрытие строк относительно высокое, но 58,3% общего branch coverage недостаточно, чтобы утверждать, что все негативные бизнес-переходы квалифицированы. Эти проценты **не означают** что 84,5% бизнес-требований доказаны. В `blueprint-r05.yml` настроено печатание пер-классной статистики в логи. Пока нет обоснованного JaCoCo quality gate: целевой P0 — закрывать пропущенные ветви через отрицательные/конкурентные тесты и только после пересмотра оракулов вводить пороги (не «добивать проценты» формальными assertions). Для новых значимых BR требуется положительный, отрицательный, конкурентный и failure/recovery oracle по применимости.
+
+### 29.4 BCQ-G3: реально выполненный восстановительный сценарий
+
+**Квалифицировано на GitHub Actions [run 43400594111](https://github.com/alimbetov/zavod/actions/runs/43400594111):**
+
+1. Поднимается **изолированный** PostgreSQL 16.6 контейнер с тестовой БД `zavod`.
+2. Java процесс в Spring Boot context (без web/PLC) создаёт Site, Membership, одну valid/published/activated линию и второй **synthetic** Blueprint из 99 линий, 853 устройств, 64 межлинейных transfers, 14 dependencies, 2 shared assets. Фиксируются IDs, hash и current ActivationSet.
+3. Только **после commit** Java пишет файл `ready`; тест выполняет принудительный `SIGKILL` первой JVM.
+4. **Новая JVM** читает ту же PostgreSQL при `spring.jpa.hibernate.ddl-auto=validate`, сверяет hash, rev1/rev2, stable IDs, весь синтетический graph с заново сгенерированным golden fixture, approvals, activeSet, previousSetId.
+5. Выполняются `pg_dump -Fc` и `pg_restore` в отдельную **чистую БД** `zavod_restored`. Третья JVM повторяет проверки на восстановленной БД с `ddl-auto=validate`.
+6. Все проверки PASS. Отдельные Testcontainers JUnit также подтверждают Spring context restart, concurrent activation, PostgreSQL CHECK failure rollback и отрицательный cross-site pointer.
+
+**Не покрывает:** kill во время незавершённого commit, обрыв TCP/результат «коммит успешен, но ответ потерян», дисковую порчу данных и WAL recovery, базы с реальным промышленным объёмом, production backup schedule, RPO/RTO SLA, multi-site failover и OT availability.
+
+### 29.5 Operational Integrity — разделение готового и незавершённого
+
+| Gate | Статус | Доказательство / следующий шаг |
+|---|---|---|
+| OI-G3-01: after-commit JVM SIGKILL + rehydrate immutable Blueprints | **PASS** | `scripts/test-bcq-recovery.sh`, `BcqRecoveryProcess`, CI |
+| OI-G3-02: `pg_dump` → `pg_restore` в независимую БД + проверка связей | **PASS** | Сквозной JVM CI на тестовой PostgreSQL |
+| OI-G3-03: бизнес-атомарность Site active pointer и ActivationSet при DB CHECK error | **PASS** | `BlueprintBusinessJourneyPostgresTest` |
+| OI-G3-04: corrupted cross-site Site.activeSetId guard | **PASS** | RED `f2e12b78` → GREEN `14c66394`, контроль Site и Blueprint ownership |
+| OI-G3-05: network loss/process kill **during** transaction commit | **OPEN** | Inject fault; classify definite rollback vs unknown outcome; no duplicate on retry |
+| OI-G3-06: Idempotency-Key + transactional state-transition audit + Outbox | **OPEN** | Разработать separate contracts OI-001…004; atomic DB event and command-result keys |
+| OI-G3-07: recovery drills under RPO/RTO, WAL/backup rotation and schema upgrades | **OPEN** | Automated backup checks, restore-to-clean schema, deployment/rollback procedure |
+| OI-G3-08: DB constraints/forensic validation for immutable revision and activation chain | **PARTIAL** | JPA+hash guard exists; physical append-only UPDATE prevention and full previous-set chain verification OPEN |
+| OI-G3-09: independent production site RBAC / four-eyes review | **OPEN** | Production editor identity, provisioning, approved actor separation, security audit |
+| OI-G3-10: production execution and OT commissioning | **OUT OF CURRENT SCOPE** | Отдельные ProcessRun, Lot, resource reservation, read-only Edge and site FAT/SAT |
+
+**Критический архитектурный вывод:** business persistence ACID и локальный restart/restore теперь доказаны для указанного synthetic сценария, но **Operational Integrity целиком НЕ завершён**. Сначала нужно исключить неопределённые результаты повторных команд и обеспечить audit/outbox; нельзя считать `Activate` идемпотентным просто потому, что он отклоняет `ALREADY_ACTIVE`.
+
+### 29.6 Следующая очередь без новых модулей
+
+1. **OI-001 / OI-002:** контракт идентификатора команды + payload hash + immutable attempt result и PostgreSQL transaction. Отдельные GREEN/RED тесты «ответ потерян после commit», «повтор команды», «same key/different payload», «two concurrent identical command», «неизвестный исход». Без подключения брокера.
+2. **OI-003:** append-only audit transition ledger для `Approve/Publish/Activate`, Site, Revision hash, actor, operation, previous→new, reason, timestamp, correlationId. Проверка одной DB-транзакции с предметной операцией.
+3. **OI-004 / OI-005:** network disconnect/in-flight commit failure injection, reject unverifiable active pointer chain, no orphan sets, cross-site protection. Отдельно WAL/disk fault is environment qualification.
+4. **OI-006:** исполняемые backup retention/migration/recovery instructions, RPO/RTO baselines, clean deployment to PostgreSQL `ddl-auto=validate`.
+5. **Review gate:** независимая проверка BR/FAT/test oracle и JaCoCo missed branches, потом production auth/security и только затем React Studio/Smart Focus.
+
+**Запрет преждевременной квалификации:** даже при выполнении G3-01…04 статус остаётся `ENGINEERING CORE QUALIFIED FOR LABORATORY WORK`, не `PRODUCTION-READY PHYSICAL PROCESS OS`. Новые модули не служат заменой завершению OI-G3-05…09.

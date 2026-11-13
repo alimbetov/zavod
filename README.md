@@ -26,6 +26,22 @@
 
 **Технологии:** Java 21 / Spring Boot / JPA / PostgreSQL; React + TypeScript + React Flow (после квалификации ядра); бесплатный OSS (Apache-2.0 предпочтительно, MIT и другие совместимые permissive лицензии допустимы с уведомлениями). Vaadin Flow не используется. Liquibase/Flyway пока нет. `spring.jpa.hibernate.ddl-auto=update` только для DEV; в PROD `validate` и отдельная квалификация схемы.
 
+## Паспорт инженерного ядра и тестовое покрытие
+
+Zavod Core — **Java/JPA инженерная модель**, не SCADA/PLC: versioned Catalog → ProcessBlueprint → Validation/Impact → PostgreSQL Draft CAS → Approve/Publish → PlantActivationSet. `Activate` выбирает инженерную конфигурацию и **не запускает физическое оборудование**. Полное описание агрегатов, границ и тестовой матрицы: [§29 единого мастер-ТЗ](docs/ZAVOD-MASTER-SPEC.md).
+
+**JaCoCo на верифицированном commit `14c66394`: 84,5% строк (1 078/1 276), 58,3% ветвей (575/986)**; это покрытие production-классов смешанными pure-domain и JPA/PostgreSQL JUnit тестами, а НЕ доля выполненных бизнес-инвариантов. `mvn verify` запускает 25 JUnit методов (включая 5 обёрток уже существующих smoke-тестов), плюс отдельные каталожные и 10 000 детерминированных графовых проверок. [JaCoCo/CI](https://github.com/alimbetov/zavod/actions/runs/43400594412).
+
+**BCQ-G3 пройден частично:** реальный Java `SIGKILL` после commit, повторное чтение 99 линий с 853 устройствами другой JVM, `pg_dump → pg_restore` в чистую БД и независимая повторная проверка — PASS. [CI recovery](https://github.com/alimbetov/zavod/actions/runs/43400594111). PostgreSQL CHECK fault подтверждает атомарный rollback; отдельный RED→GREEN тест закрывает некорректный cross-site ActivationSet pointer. **Всё ещё OPEN:** обрыв DB/kill во время commit, idempotency keys, audit/outbox, backup RPO/RTO, внешняя identity и разделение полномочий.
+
+Локальный запуск:
+```bash
+bash scripts/test-blueprint-core.sh    # Java 21, pure domain + 10 000 seeded graphs
+mvn verify                              # PostgreSQL Docker/Testcontainers + JaCoCo
+bash scripts/test-bcq-recovery.sh        # изолированная PostgreSQL + SIGKILL + dump/restore
+```
+Последняя команда создаёт и удаляет собственный Docker-контейнер PostgreSQL на `127.0.0.1:55432`. Не запускайте тесты со значениями переменных реальной production-БД.
+
 ## Локальный Backend API R0.6A (только разработка)
 
 По умолчанию HTTP API **закрыт**. Для локального стенда с PostgreSQL и Java 21 явно включите профиль `dev-local`, который слушает только `127.0.0.1`:
