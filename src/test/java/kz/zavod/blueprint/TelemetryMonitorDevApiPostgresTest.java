@@ -71,6 +71,15 @@ class TelemetryMonitorDevApiPostgresTest {
                 .header("X-Zavod-Dev-Write","true").contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(incoming)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.duplicate").value(false));
+        // Event key is immutable. The HTTP contract must report a telemetry
+        // payload conflict, not a misleading Blueprint revision conflict.
+        var conflicting=new TelemetryIngestionService.Incoming("evt-1",new BigDecimal("3.1"),
+                "bar",now.minusSeconds(2),Quality.GOOD);
+        mvc.perform(post(base+"/signals/"+binding.id()+"/samples")
+                .header("X-Zavod-Dev-Write","true").contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(conflicting)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("TELEMETRY_EVENT_CONFLICT"));
         mvc.perform(get(base+"?unitId=L1&minutes=60&limit=10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].definition.equipmentId").value("pump"))
