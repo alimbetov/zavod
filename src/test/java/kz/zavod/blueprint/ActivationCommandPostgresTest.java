@@ -1,6 +1,7 @@
 package kz.zavod.blueprint;
 
 import java.util.*;
+import java.sql.DriverManager;
 import java.util.concurrent.*;
 import kz.zavod.blueprint.domain.ProcessBlueprint;
 import kz.zavod.blueprint.domain.ProcessBlueprint.*;
@@ -12,6 +13,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -44,6 +46,7 @@ class ActivationCommandPostgresTest {
     @Autowired ActivationTransitionRepository transitions;
     @Autowired PlantActivationSetRepository sets;
     @Autowired PlatformTransactionManager transactionManager;
+    @Autowired JdbcTemplate jdbc;
     @AfterEach void clear(){SecurityContextHolder.clearContext();}
 
     private void actor(String username) {
@@ -116,6 +119,35 @@ class ActivationCommandPostgresTest {
         assertEquals(1,receipts.countBySiteId(f.site()));
         assertEquals(1,transitions.countBySiteId(f.site()));
         assertEquals(1,sets.countBySiteId(f.site()));
+    }
+
+    @Test void realPostgresConnectionTerminationBeforeCommitRollsBackCommandAndAudit() {
+        var f=published();
+        var transaction=new TransactionTemplate(transactionManager);
+        assertThrows(RuntimeException.class,()->transaction.execute(status->{
+            int targetPid=jdbc.queryForObject("select pg_backend_pid()",Integer.class);
+            commands.activate(f.site(),"interrupted-before-commit",f.blueprint(),1,null);
+            // Separate PostgreSQL session terminates the actual transaction connection.
+            // This is a genuine DB disconnect BEFORE COMMIT, not a lost COMMIT ACK.
+            try(var other=DriverManager.getConnection(pg.getJdbcUrl(),
+                    pg.getUsername(),pg.getPassword());
+                var statement=other.prepareStatement("select pg_terminate_backend(?)")) {
+                statement.setInt(1,targetPid);
+                try(var response=statement.executeQuery()) {
+                    assertTrue(response.next());
+                    assertTrue(response.getBoolean(1));
+                }
+            } catch(java.sql.SQLException error) {
+                throw new IllegalStateException("FAULT_INJECTION_SETUP_FAILED",error);
+            }
+            return null;
+        }));
+        assertThrows(BlueprintLifecycleException.class,
+            ()->commands.reconcile(f.site(),"interrupted-before-commit"));
+        assertEquals(0,receipts.countBySiteId(f.site()));
+        assertEquals(0,transitions.countBySiteId(f.site()));
+        assertEquals(0,sets.countBySiteId(f.site()));
+        assertNull(sites.findById(f.site()).orElseThrow().activeSetId());
     }
 
     @Test void concurrentIdenticalCommandsProduceOneStateTransition() throws Exception {
