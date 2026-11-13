@@ -93,6 +93,8 @@ class ActivationCommandPostgresTest {
         assertEquals(1,sets.countBySiteId(f.site()));
         assertThrows(BlueprintLifecycleException.class,()->commands.activate(
                 f.site(),"command-1",f.blueprint(),1,"another-set"));
+        assertThrows(BlueprintLifecycleException.class,()->commands.activate(
+                f.site(),"command-1",f.blueprint(),1,"<none>"));
         assertEquals(1,receipts.countBySiteId(f.site()));
     }
 
