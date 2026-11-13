@@ -19,7 +19,7 @@
 ```bash
 bash scripts/test-catalog.sh
 ```
-18 локальных smoke-проверок используют только JDK. Переход на JUnit 5/Maven и CI — в отдельном foundational PR, прежде чем считать функциональность production-ready.
+18 smoke-проверок используют только JDK; есть GitHub Actions `catalog-smoke` для их выполнения. Переход на JUnit 5/Maven и расширенная интеграционная квалификация — отдельный этап; smoke CI не делает систему production-ready.
 
 ## Что сознательно НЕ реализовано
 
