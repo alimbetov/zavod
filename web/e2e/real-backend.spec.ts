@@ -131,3 +131,38 @@ test('TF-03: real PostgreSQL simulated telemetry is revision-bound, visible and 
   await expect(monitor.getByText('Значение не подтверждено')).toBeVisible();
   await page.screenshot({path:test.info().outputPath('tf03-real-postgres-monitor.png'),fullPage:true});
 });
+
+
+test('G4 demo: real lifecycle, synthetic alarm, PostgreSQL audit and reopen',async({page})=>{
+  await page.goto('/');
+  await page.getByRole('button',{name:'Создать локальный стенд'}).first().click();
+  await page.getByRole('button',{name:'Бетонный завод'}).click();
+  await page.getByRole('button',{name:'Сохранить Draft'}).click();
+  const journey=page.getByRole('region',{name:'Демонстрационный производственный участок'});
+  await expect(journey).toBeVisible();
+  await expect(journey.getByText(/Состояние: DRAFT/)).toBeVisible();
+  await journey.getByRole('button',{name:/Согласовать \(DEMO\)/}).click();
+  await expect(journey.getByText(/Состояние: APPROVED/)).toBeVisible();
+  await journey.getByRole('button',{name:/Опубликовать/}).click();
+  await expect(journey.getByText(/Состояние: PUBLISHED/)).toBeVisible();
+  await journey.getByRole('button',{name:/Выбрать активную версию/}).click();
+  await expect(journey.getByText(/Выбрана: ДА/)).toBeVisible();
+  await expect(journey.getByText(/Журнал переходов: 3/)).toBeVisible();
+  await journey.getByRole('button',{name:/Штатный сигнал/}).click();
+  const monitor=page.getByRole('region',{name:'Мониторинг телеметрии'});
+  await expect(monitor.getByText('2.5 bar')).toBeVisible();
+  await expect(monitor.getByText(/учебный показатель ниже порога/)).toBeVisible();
+  await journey.getByRole('button',{name:/Учебная тревога/}).click();
+  await expect(monitor.getByText('6.2 bar')).toBeVisible();
+  await expect(monitor.getByRole('alert').getByText(/УЧЕБНАЯ ТРЕВОГА/)).toBeVisible();
+  await page.reload();
+  const reopened=page.getByRole('region',{name:'Демонстрационный производственный участок'});
+  await expect(reopened.getByText(/Состояние: PUBLISHED/)).toBeVisible();
+  await expect(reopened.getByText(/Выбрана: ДА/)).toBeVisible();
+  await expect(reopened.getByText(/Журнал переходов: 3/)).toBeVisible();
+  await page.getByRole('button',{name:/CP01-MIX/}).first().click();
+  const restored=page.getByRole('region',{name:'Мониторинг телеметрии'});
+  await expect(restored.getByText('6.2 bar')).toBeVisible();
+  await expect(restored.locator('.telemetry-trace circle')).toHaveCount(2);
+  await page.screenshot({path:test.info().outputPath('zavod-demo-complete.png'),fullPage:true});
+});
