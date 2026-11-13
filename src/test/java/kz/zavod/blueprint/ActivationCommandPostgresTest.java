@@ -194,6 +194,74 @@ class ActivationCommandPostgresTest {
         }
     }
 
+    /**
+     * Real PostgreSQL fault inside COMMIT, not an afterCommit Java callback:
+     * a DEFERRABLE constraint trigger runs when the transaction attempts COMMIT.
+     * A separate physical JDBC session sees that COMMIT suspended in PostgreSQL
+     * and terminates its backend. This proves the pre-durable branch, NOT the
+     * post-durable/lost-ACK branch of the ambiguous-commit window.
+     */
+    @Test void terminateRealPostgresBackendWhileCommitRunsThenRetryExactlyOnce() throws Exception {
+        var f=published();
+        jdbc.execute("create or replace function g42_suspend_commit() returns trigger as $ "+
+                "begin perform set_config('application_name','zavod-g42-commit-inflight',true); "+
+                "perform pg_sleep(12); return NEW; end; $ language plpgsql");
+        jdbc.execute("create constraint trigger g42_suspend_activation "+
+                "after insert on activation_command deferrable initially deferred "+
+                "for each row execute function g42_suspend_commit()");
+        var worker=Executors.newSingleThreadExecutor();
+        try {
+            Future<?> attempt=worker.submit(()->{
+                actor("activator");
+                try {commands.activate(f.site(),"cut-during-commit",f.blueprint(),1,null);}
+                finally {SecurityContextHolder.clearContext();}
+            });
+            int targetPid=0;
+            long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(20);
+            try(var observer=DriverManager.getConnection(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword());
+                var check=observer.prepareStatement(
+                    "select pid from pg_stat_activity where datname=current_database() "+
+                    "and application_name='zavod-g42-commit-inflight' "+
+                    "and state='active' and query ilike '%COMMIT%'")) {
+                while(System.nanoTime()<deadline && targetPid==0) {
+                    try(var rs=check.executeQuery()) {if(rs.next())targetPid=rs.getInt(1);}
+                    if(targetPid==0)Thread.sleep(30);
+                }
+                assertTrue(targetPid>0,"PostgreSQL COMMIT must be observed inside deferred trigger");
+                try(var kill=observer.prepareStatement("select pg_terminate_backend(?)")) {
+                    kill.setInt(1,targetPid);
+                    try(var result=kill.executeQuery()) {
+                        assertTrue(result.next());
+                        assertTrue(result.getBoolean(1));
+                    }
+                }
+            } finally {
+                // Release fixture regardless of failure; no leaks to other tests.
+                jdbc.execute("drop trigger if exists g42_suspend_activation on activation_command");
+                jdbc.execute("drop function if exists g42_suspend_commit()");
+            }
+            assertThrows(ExecutionException.class,()->attempt.get(20,TimeUnit.SECONDS));
+            assertEquals(ActivationCommandService.OutcomeState.NOT_OBSERVED_RETRY,
+                    commands.observe(f.site(),"cut-during-commit").state());
+            assertEquals(0,receipts.countBySiteId(f.site()));
+            assertEquals(0,transitions.countBySiteId(f.site()));
+            assertEquals(0,sets.countBySiteId(f.site()));
+            actor("activator");
+            var retried=commands.activate(f.site(),"cut-during-commit",f.blueprint(),1,null);
+            assertFalse(retried.replayed());
+            assertEquals(retried.activationSetId(),
+                    commands.observe(f.site(),"cut-during-commit").activationSetId());
+            assertTrue(commands.activate(f.site(),"cut-during-commit",f.blueprint(),1,null).replayed());
+            assertEquals(1,receipts.countBySiteId(f.site()));
+            assertEquals(1,transitions.countBySiteId(f.site()));
+            assertEquals(1,sets.countBySiteId(f.site()));
+        } finally {
+            worker.shutdownNow();
+            jdbc.execute("drop trigger if exists g42_suspend_activation on activation_command");
+            jdbc.execute("drop function if exists g42_suspend_commit()");
+        }
+    }
+
     @Test void concurrentIdenticalCommandsProduceOneStateTransition() throws Exception {
         var f=published();
         var pool=Executors.newFixedThreadPool(3);
