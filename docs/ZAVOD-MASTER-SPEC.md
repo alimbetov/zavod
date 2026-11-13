@@ -1201,7 +1201,7 @@ flowchart TB
 
 ### 18.1 Scale and boundaries
 
-- The 10-active-line MVP limit remains a configurable product policy, not a database array limit. Scenarios 1/10/50/99 exercise synthetic structure and do not imply 99 PLCs or qualified live throughput.
+- The 10-active-LINE MVP limit remains a configurable product policy; circuits, zones and stations do not consume line slots, not a database array limit. Scenarios 1/10/50/99 exercise synthetic structure and do not imply 99 PLCs or qualified live throughput.
 - Plant/Blueprint snapshots include independently described ProcessUnits and typed inter-unit boundary contracts. A physical asset has one identity even if shared by many units.
 - ProcessUnit CIRCUIT is the foundation for hydroponics/recirculation. Real recirculation is not yet fully qualified: explicit flow-loop rules, buffers, measurements and failure modes remain mandatory future work. Process dependency cycles remain blocked.
 - Revisions are append-only: changes create a new snapshot. Impact analysis finds downstream connections and peers sharing constrained assets; it does not execute or authorize physical operations.
@@ -1239,7 +1239,7 @@ spring.datasource.hikari.connection-timeout=30000
 | SC-BP-002 | Save and reload 99 units, all equipment, 64 transfers, 14 dependencies and shared assets | PostgreSQL Testcontainers |
 | SC-BP-003 | Change one unit, save revision 2, reload revision 1 unchanged | PostgreSQL Testcontainers |
 | SC-BP-004 | Impact report finds dependent and shared-resource peers | Core and integration |
-| SC-BP-005 | maxActiveUnits=10 policy warns/blocks 99, while test policy 99 accepts | Core smoke |
+| SC-BP-005 | maxActiveLines=10 policy warns/blocks 99, while test policy 99 accepts | Core smoke |
 | SC-BP-006 | Unknown template/unbound boundary reported; DRAFT preserved but not published | Core and integration |
 | SC-BP-007 | Shared capacity contention detected, not mistaken for real production throughput | Core and integration |
 | SC-BP-008 | Interunit dependency cycles blocked; hydroponic recirculation requires separate engineering safety review | Core smoke / future |
