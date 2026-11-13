@@ -1317,3 +1317,74 @@ spring.datasource.hikari.connection-timeout=30000
 Новые acceptance contracts `SC-HARD-*` описаны ниже. До их исполнения статус **RED/PLANNED**, не PASS. Первоначальные 8 испытаний пользователя сохраняются. Следующие тесты покрывают найденные дополнительно дефекты и причинно-следственную точность.
 
 **No-overengineering rule:** каждая доработка должна улучшать конкретный проверяемый инвариант; запрещено вводить новые абстракции ради предполагаемой поддержки любой промышленности. Java/Spring modular monolith и PostgreSQL сохраняются. Dev `spring.jpa.hibernate.ddl-auto=update`, PROD `validate` с review schema/backup/rollback; Liquibase/Flyway не подключать без отдельного DEC.
+
+
+### 19.6 Матрица RED acceptance tests — восемь обязательных сценариев
+
+| ID | Priority | Сценарий / метод | Проверяемый oracle |
+|---|---|---|---|
+| SC-HARD-001 | P0 | 99 LINE. На L037 меняем физический port / connection. Использовать отдельный golden fixture: L037→L040→L043 и общий ресурс только с L012,L055, без других downstream путей. | Точный набор affected IDs = {L037,L040,L043,L012,L055} для ресурсно значимого изменения, для presentation-only изменения = {L037}. Ни одного чужого ID; каждый affected имеет причину и путь. Oracle не вычислять production-алгоритмом. |
+| SC-HARD-002 | P0 | Два независимых клиента/транзакции с barrier одновременно сохраняют Revision 2 на expectedRevision=1. | Ровно 1 успешная Revision 2, второй `RevisionConflict` / HTTP 409, без 500; Revision 1 неизменна, уникальный индекс сохранён. Повторить со случайным порядком запуска. |
+| SC-HARD-003 | P0 | 99 LINE → записать Revision 1, завершить **JVM-процесс**, создать новый процесс с прежней PostgreSQL, загрузить Revision 1/2. | Deep equality по IDs, типам, версиям каталога, ports, Boundary, Transfer, Dependency, SharedAsset, hash; нет обращения к памяти старого JVM. |
+| SC-HARD-004 | P0 | Удалить реальный EquipmentPort, на который указывает Boundary линии L037 и внешний Transfer другой линии. | Публикация/активация запрещена с exact sourceUnit/equipment/port/targetUnit/targetBoundary; старый Active snapshot не затронут, DRAFT сохранён. |
+| SC-HARD-005 | P0 | Компрессор: capacity=3 units в определённом окне, 10 одновременных claims по 1 unit. | Полные 10 consumer IDs, sum=10, exceeded=7, unit/time-window; `RESOURCE_OVERCOMMIT` при строгой policy; если разрешена очередность — предупреждение вместо ложного физического отказа. |
+| SC-HARD-006 | P1 | 100, 500, 1000 Unit с типовым составом оборудования и hub resources. | Замер p50/p95/p99 validate, impact, serialize, JPA save/load, SQL count/latency, heap peak, GC, CPU, pool wait, JSON bytes; 3+ warmup и 30+ измерений на фиксированном окружении, результаты и пороги согласовать до Gate. |
+| SC-HARD-007 | P1 | Изменить snapshot_json без обновления hash, подменить hash, schema_version на неизвестное значение. | `CORRUPTED_BLUEPRINT_SNAPSHOT` / `UNSUPPORTED_BLUEPRINT_SCHEMA`, никакой silent substitution, статус recovery и exact bad revision сохранены для расследования. |
+| SC-HARD-008 | P1 | 10 000 seeded property-based генераций корректных и повреждённых схем. | Корректные варианты сохраняют инварианты; некорректные дают предсказуемый код без NPE/переполнения/зависания. Seed и минимизированный пример фиксируются в CI. |
+
+**Важно:** значения 99 / 100 / 500 / 1000 в этом ТЗ — параметры испытаний, не квота на промышленную эксплуатацию и не ограничение числа физических PLC.
+
+### 19.7 Дополнительные RED-тесты, выявленные ревью
+
+| ID | Priority | Контракт | Expected PASS |
+|---|---|---|---|
+| SC-HARD-009 | P0 | Catalog v1 Approved, затем создание type v2 с изменёнными портами | Old Revision сохраняет v1 и проходит проверку по pinned v1; migration только явная |
+| SC-HARD-010 | P0 | Попытка подключить чужой Site Asset, Blueprint с подменённым maxActiveLines | 403/404 или domain deny; server-owned policy неизменна; отсутствует утечка foreign IDs |
+| SC-HARD-011 | P0 | Площадка: 99 LINE DRAFT, 10 APPROVED+ACTIVE, 89 неактивных | Все 99 сохраняются; 10 успешно ACTIVE; 11-я активация запрещена без удаления DRAFT |
+| SC-HARD-012 | P0 | Shared capacity overbooking и EXCLUSIVE конфликт по времени | Проверка видит precise consumerIds, policy и capacity units, блокирует только реально запрещённую активацию |
+| SC-HARD-013 | P0 | Имена портов совпадают, но отличается FlowKind/direction/medium/unit/cardinality | Publish gate выдаёт точную ошибку catalog/type/version/port; нет silent coercion |
+| SC-HARD-014 | P0 | Shared asset revision v1→v2 ломает L012 и L037 | Impact включает оба модуля с причинами; ActivationSet v2 не вступает в силу, old version остаётся Active |
+| SC-HARD-015 | P0 | 10 одновременных писателей одной revision; rollback на середине транзакции | Нет дублирования ревизий/partial writes; одна winner, остальные typed conflicts, atomic head+snapshot |
+| SC-HARD-016 | P1 | Идентичный idempotencyKey с тем же и другим payload | Для того же payload — один и тот же сохранённый ответ; для другого — controlled conflict |
+| SC-HARD-017 | P1 | Duplicate Equipment ID/ResourceUse, missing Unit/Port refs, два входа на порт max=1 | Exact deterministic Finding.code/entity; ни один некорректный link не принимается молча |
+| SC-HARD-018 | P1 | 240 тактов с ограниченными material/item buffers, process duration, shared resource conflicts | Нет отрицательного баланса или бесконечных buffers, одинаковая seed→одинаковый результат, очередность событий детерминирована |
+| SC-HARD-019 | P1 | PostgreSQL unavailable/timeout between version check and insert | Atomic rollback, retry безопасен по idempotencyKey, controlled exception вместо потерянной ревизии |
+| SC-HARD-020 | P1 | Three golden fixtures: hydroponic CIRCUIT, batch mixer plant, discrete packaging | Один Blueprint schema, три профиля; физическая рециркуляция DRAFT-only до process qualification |
+| SC-HARD-021 | P1 | 1000 consumers одного PlantAsset; hub resource graph | Нет материализации clique, memory/operation count пропорциональны числу реальных links, benchmark artifact сохранён |
+| SC-HARD-022 | P1 | Одновременно редактировать две независимые линии в одном Plant | Обе DRAFT версии сохраняются; publish требует согласованного manifest, нет тихой перезаписи другой линии |
+| SC-HARD-023 | P1 | Несанкционированное чтение чужих ревизий/общих ресурсов по guessed UUID | Backend deny-by-default + audit; нельзя получить чужой snapshot |
+| SC-HARD-024 | P2 | React Blueprint Studio: Create→Connect→Validate→Save→Reopen, затем HMI virtual preview | Playwright реальные браузерные captures, schema/ID сохранены, виртуальный источник маркирован, PLC write отсутствует |
+| SC-HARD-025 | P2 | Backup/restore PostgreSQL с несколькими ревизиями и interunit graph | Deep equality + hash, политика backup retention и восстановления документирована |
+
+### 19.8 Нормативные требования FR-HARD
+
+| ID | Требование | Тесты |
+|---|---|---|
+| FR-HARD-001 | BlueprintDiff/Impact с точными reason paths и без peer-clique | SC-HARD-001,021 |
+| FR-HARD-002 | Атомарные concurrent/idempotent immutable revisions через JPA/PostgreSQL | SC-HARD-002,015,016,019 |
+| FR-HARD-003 | Версионированный EquipmentCatalog и typed physical Port schema | SC-HARD-004,009,013,017 |
+| FR-HARD-004 | PlantActivationSet и серверный лимит только на ACTIVE LINE | SC-HARD-011,014,022 |
+| FR-HARD-005 | ResourcePolicyValidator: capacity, allocation, unit, time assumptions, consumers | SC-HARD-005,012,018 |
+| FR-HARD-006 | Долговременная сохранность, обнаружение corruption, восстановление после рестарта | SC-HARD-003,007,025 |
+| FR-HARD-007 | Site ownership, RBAC и аудит до сетевых write API | SC-HARD-010,023 |
+| FR-HARD-008 | Property-based и performance qualification | SC-HARD-006,008,021 |
+| FR-HARD-009 | Единая ProcessUnit модель для CIRCUIT/BATCH/DISCRETE | SC-HARD-020,024 |
+| FR-HARD-010 | Publish/Activate через квалифицированные ревизии, без PLC control | SC-HARD-004,014,024 |
+
+### 19.9 Порядок работ / Quality Gates
+
+**G0 — архитектурный контракт (Draft, без merge в main до review):** подписать модели BlueprintRevision, ActivationSet, PortBinding, Diff, ResourcePolicy; утвердить независимые oracle для тестов 001–005, 009–015. Создать RED-тесты, зафиксировать реальный красный результат. Не усложнять домен до согласования контрактов.
+
+**G1 — domain GREEN (P0):** исправить Impact, каталог versions/ports, Boundary binding, Active policy, publication lifecycle и resource rules. JUnit unit/parameterized tests и negative cases; проверять, что ранее Approved/Active revisions не затрагиваются.
+
+**G2 — persistence GREEN (P0):** транзакционный BlueprintHead CAS, uniqueness, controlled conflicts, idempotency, PostgreSQL concurrency, рестарт реального JVM процесса, атомарный ActivationSet. На этом этапе `spring.jpa.hibernate.ddl-auto=update` допускается в DEV, а PROD — только `validate` после проверенного schema deployment/backup/rollback. Не вводить Liquibase/Flyway без согласования.
+
+**G3 — reliability и performance (P1):** 10 000 seeded schemas, corrupted JSON/schema, fault injection, 100/500/1000 modules с повторяемым performance harness, heap/CPU/DB metrics. Явно определить baseline аппаратуры и accept/reject thresholds; средняя задержка одного CI-прогона не заменяет p95/p99.
+
+**G4 — продуктовая проверка (отдельный R0.6):** React/React Flow Blueprint Studio, два контрастных профиля (гидропоника + упаковка/бетон), save/reopen E2E, virtual HMI. Real PLC/OT — отдельный read-only qualification; никаких управляющих команд.
+
+**Evidence contract:** FR-ID → SC-ID → JUnit/Playwright test method → fixture seed → exact commit SHA → CI link → PASS/FAIL → independent reviewer. На каждом PR фиксировать непройденные сценарии. `CI SUCCESS` означает только зелёные запущенные тесты; не доказывает отсутствия непокрытых рисков.
+
+**Definition of Done для R0.5Q:** все P0 AUD-001…010 закрыты инженерными тестами и ревью; нет публикации без server-side validation, все concurrent writes дают предсказуемый результат, старые snapshots immutable, точно известен круг затронутых модулей и корректный активный revision set. P1 benchmark/robustness обязательны прежде, чем утверждать готовность управлять/мониторить 99 производственных линий. SCADA/MES и производство реального PLC из этого не следуют.
+
+**Ограничения:** никаких Kafka, Redis, отдельной графовой БД, микросервисного рефакторинга, arbitrary user scripts и команд на реальные safety-контроллеры на текущем этапе. Архитектурные решения проектировать по проверяемым сценариям, не по предполагаемому масштабу.
