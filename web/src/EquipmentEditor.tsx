@@ -73,6 +73,7 @@ function EquipmentEditorInner({site,blueprint,unitId,catalog,onCommitted,onBack}
   const [viewport,setViewport]=useState(viewDefault);
   const viewportRef=useRef(viewDefault);
   const dropRef=useRef<HTMLDivElement>(null);
+  const dragOrigin=useRef<Snapshot|null>(null);
   const changed=!lastSaved||!equal(snapshot,lastSaved);
   const editorRevision=blueprint.revision;
   const rootRef=useRef({site,blueprintId:blueprint.id,unitId});
@@ -190,11 +191,26 @@ function EquipmentEditorInner({site,blueprint,unitId,catalog,onCommitted,onBack}
   const nodes=useMemo(()=>makeNodes(snapshot.equipment,snapshot.positions),[snapshot]);
   const edges=useMemo(()=>getEdges(snapshot.connections),[snapshot.connections]);
   const nodeChange=(changes:NodeChange<EquipmentNode>[])=>{
-    // Visual dragging is staged until pointer release; avoids dozens of undo entries.
-    const next=applyNodeChanges(changes,nodes);
-    const update=Object.fromEntries(next.filter(n=>snapshot.positions[n.id]===undefined||
-      !equal(n.position,snapshot.positions[n.id])).map(n=>[n.id,n.position]));
-    if(Object.keys(update).length)mutate(x=>({...x,positions:{...x.positions,...update}}));
+    // During drag, update the controlled view but record just ONE undo step
+    // at pointer release, not one for every pixel of movement.
+    if(!changes.some(c=>c.type==='position'))return;
+    setSnapshot(current=>{
+      const currentNodes=makeNodes(current.equipment,current.positions);
+      const next=applyNodeChanges(changes,currentNodes);
+      const updates=Object.fromEntries(next.filter(n=>!equal(n.position,
+        current.positions[n.id]??initialPosition(current.equipment.findIndex(e=>e.id===n.id))))
+        .map(n=>[n.id,n.position]));
+      return Object.keys(updates).length?{...current,positions:{...current.positions,...updates}}:current;
+    });
+  };
+  const dragStop=(id:string,position:PositionXY)=>{
+    const initial=dragOrigin.current;
+    dragOrigin.current=null;
+    setSnapshot(current=>({...current,positions:{...current.positions,[id]:position}}));
+    if(initial&&!equal(initial.positions[id]??initialPosition(initial.equipment.findIndex(e=>e.id===id)),position)){
+      setPast(history=>[...history.slice(-49),initial]);
+      setFuture([]);
+    }
   };
   const dragEquipment=(event:DragEvent<HTMLButtonElement>,key:string)=>{
     event.dataTransfer.setData('application/x-zavod-equipment',key);
@@ -237,7 +253,8 @@ function EquipmentEditorInner({site,blueprint,unitId,catalog,onCommitted,onBack}
           nodes={nodes} edges={edges} nodeTypes={nodeTypes}
           onInit={api=>{instance.current=api;api.setViewport(viewport);}}
           onNodesChange={nodeChange}
-          onNodeDragStop={(_,node)=>mutate(x=>({...x,positions:{...x.positions,[node.id]:node.position}}))}
+          onNodeDragStart={()=>{dragOrigin.current=snapshot;}}
+          onNodeDragStop={(_,node)=>dragStop(node.id,node.position)}
           onNodeClick={(_,node)=>setSelected(node.id)}
           onPaneClick={()=>setSelected('')}
           onConnect={connect}
