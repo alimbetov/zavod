@@ -7,7 +7,7 @@ import java.time.Instant;
 @Table(name="blueprint_approval",uniqueConstraints=@UniqueConstraint(
     name="uq_blueprint_approval_rev",columnNames={"blueprint_id","revision_no"}))
 public class BlueprintApprovalEntity {
-    public enum State { APPROVED, PUBLISHED }
+    public enum State { APPROVED, PUBLISHED, REVOKED }
     @Id @Column(name="id",nullable=false,length=64) private String id;
     @Column(name="site_id",nullable=false,length=64) private String siteId;
     @Column(name="blueprint_id",nullable=false,length=36) private String blueprintId;
@@ -18,6 +18,9 @@ public class BlueprintApprovalEntity {
     @Column(name="approved_at",nullable=false) private Instant approvedAt;
     @Column(name="published_by",length=128) private String publishedBy;
     @Column(name="published_at") private Instant publishedAt;
+    @Column(name="revoked_by",length=128) private String revokedBy;
+    @Column(name="revoked_at") private Instant revokedAt;
+    @Column(name="revocation_reason",length=1024) private String revocationReason;
     @Version @Column(name="row_version",nullable=false) private long rowVersion;
     protected BlueprintApprovalEntity(){}
     public BlueprintApprovalEntity(String site,String blueprint,long revision,String json,String actor){
@@ -25,10 +28,17 @@ public class BlueprintApprovalEntity {
         this.siteId=site;this.blueprintId=blueprint;this.revisionNo=revision;
         this.selectedUnitsJson=json;this.state=State.APPROVED;this.approvedBy=actor;this.approvedAt=Instant.now();
     }
+    public String approvedBy(){return approvedBy;}
+    public String revokedBy(){return revokedBy;}
+    public String revocationReason(){return revocationReason;}
     public String siteId(){return siteId;}
     public long revisionNo(){return revisionNo;}
     public String selectedUnitsJson(){return selectedUnitsJson;}
     public State state(){return state;}
+    public void revoke(String actor,String reason) {
+        if(state!=State.PUBLISHED)throw new BlueprintLifecycleException("NOT_PUBLISHED");
+        state=State.REVOKED;revokedBy=actor;revokedAt=Instant.now();revocationReason=reason;
+    }
     public void publish(String actor) {
         if(state!=State.APPROVED)throw new BlueprintLifecycleException("NOT_APPROVED");
         state=State.PUBLISHED;publishedBy=actor;publishedAt=Instant.now();

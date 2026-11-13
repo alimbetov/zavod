@@ -3,6 +3,13 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'scripts/test-bcq-recovery.sh'
+      - 'scripts/test-bcq-035-migration.sh'
+      - 'scripts/sql/**'
+      - '.github/workflows/bcq-g3-process-recovery.yml'
   workflow_dispatch:
 jobs:
   recover:
@@ -17,5 +24,7 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+      - name: Check BCQ-035 PostgreSQL additive migration and replay
+        run: bash scripts/test-bcq-035-migration.sh
       - name: Force Java process crash, read same PostgreSQL, restore backup
         run: bash scripts/test-bcq-recovery.sh
