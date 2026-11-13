@@ -2734,3 +2734,94 @@ Secrets, certificates and remote maintenance access must follow the enterprise O
 6. Затем — read-only Edge, HMI, MES. ML и облачная аналитика пока не должны вытеснять первый успешный сценарий.
 
 **Release verdicts должны различаться:** LAB ENGINEERING QUALIFIED; PILOT READY READ ONLY; OT SITE COMMISSIONED; PRODUCTION CONTROL QUALIFIED. Первая квалификация не означает последнюю.
+
+
+---
+
+## 31. RS-0…RS-5 — React Studio Engineering Workspace: six killer features (2026-11-13)
+
+**Статус:** ТЗ / implementation in progress, NOT product-qualified. Единый нормативный документ — этот мастер-ТЗ. Текущий REST `dev-local` не является production API и не должен открываться в недоверенную сеть. Права, публикация и активация остаются серверными. Инженерная активация НЕ управляет PLC, HMI не изображает реальные сигналы без аттестованного источника. Ссылки на OT-0 (§26), BCQ-G4 (§29–30) и отдельный React E2E Issue #9 — обязательные зависимости.
+
+### 31.1 Пользователи, целевая работа и фокус
+
+**ICP:** инженер-технолог, инженер АСУ ТП, главный инженер/рецензент и администратор площадки. **Первый рабочий профиль:** `batch.concrete.v1` на одном заводе. Площадка может иметь несколько LINE, CIRCUIT, ZONE, STATION. **Нельзя ограничивать Canvas одной линией**. Линии могут быть независимыми или связанными посредством `Transfer` (типизированный физический поток), `Dependency` (порядок/влияние) и `SharedAsset + ResourceUse` (общий ресурс). Layout не входит в инженерный хеш ревизии, сохраняется отдельно с CAS и не может изменить SignalBinding.
+
+**North Star:** Create site/project → выбрать бетонный шаблон → создать несколько взаимозависимых линий → связать типизированные порты и границы → задать паспортные параметры → Validate/Guardian → Save & Reopen → X-Ray и Change Impact → независимое Approve/Publish/Activate → Restore known-good → read-only HMI preview. Публикация/активация доступны только после соответствующих BCQ-G4 security, audit, idempotency и recovery gates.
+
+### 31.2 UX / дизайн-система
+
+**Компоновка desktop-first:** слева Catalog + дерево площадки/линий, центр масштабируемый React Flow Canvas, справа Engineering Inspector (объект/порты/физические свойства/привязки), внизу раскрываемая панель Guardian + Change Timeline. Верхняя строка: site, project, revision, DRAFT/APPROVED/PUBLISHED/REVOKED, dirty/saved/conflict, number of blocking findings, user and role. Поддержать RU/KK/EN и длинные переводы. Светлая/тёмная темы и доступный контраст; цвет никогда не является единственным индикатором статуса.
+
+**Два UI-режима над одним серверным Blueprint:** Guided (шаблоны/шаги/минимум контролов) и Engineering (полная палитра, boundary/transfer/dependency/resource inspector). Смена режима не меняет модель, права, сохранение и validation. Узлы линии визуально группируются; boundary порты визуально отделены от внутренних equipment ports. FlowKind MATERIAL / ITEM_FLOW / UTILITY / INSTRUMENT показывать через легенду с формой и текстом, не только цветами. Support pan/zoom, minimap, fit, keyboard, multi-select, undo/redo in local draft, screen-reader labels, visible loading/error/retry.
+
+**Сохранение:** серверное сохранение Blueprint только с expectedRevision CAS и независимое сохранение layout with expectedLayoutVersion. Просроченный revision — конфликт с compare/reload, не silently overwrite. Autosave можно вводить только после тестов идемпотентности/конкурентности; explicit Save обязательно в R1. DRAFT допускает незавершённый граф, но publish preflight fail-closed.
+
+### 31.3 Шесть feature contracts
+
+| ID | Feature | P | Серверный источник истины | Критерий приёмки |
+|---|---|---|---|---|
+| RS-K1 | **Smart Plant Builder** | P0 | `EquipmentCatalog` + `GuidedBlueprintBuilder` + site policy | Создать 3+ связанные BATCH линии без ручного JSON, типизированные boundary/transfer, immutable draft preview; engineer approves saving |
+| RS-K2 | **Engineering X-Ray** | P0 | `BlueprintImpactAnalyzer`, `ProcessBlueprint`, validation | Выбор unit/equipment подсвечивает input/output, upstream/downstream, SharedAsset, affected units и confidence; нет вымышленных физических влияний |
+| RS-K3 | **Engineering Guardian** | P0 | `BlueprintValidator`, `BlueprintReadiness`, `ExplainableValidation` | Диагностика с stable code/severity/entity/problem/consequence/action и deep link; fixes preview→diff→explicit confirm; до confirmation snapshot не меняется |
+| RS-K4 | **Change Time Machine** | P0 (after G4) | persisted revision/hash, lifecycle states, authoritative audit ledger | Сравнить rev N→M, показать added/removed/changed, impact и подтверждённого автора; Restore создаёт новый ActivationSet, revoked target blocked, CAS enforced |
+| RS-K5 | **One-Click HMI Preview** | P1 | `HmiPreviewGenerator` + server-owned published selection | Отдельный read-only экран только для PUBLISHED, `live=false`, `UNKNOWN_NO_TELEMETRY`, не допускает PLC write |
+| RS-K6 | **Integration Ready View** | P1 (after OT-0) | InstalledAsset, SignalDefinition, SignalBinding, source quality & config version | Signal mappings versioned independently; pending/unbound labels, simulated != physical, no fabricated timestamp or reading, no direct browser-to-PLC |
+
+**K1 первая реализация:** `GuidedBlueprintBuilder.concreteStarter` формирует 3 структурные LINE: aggregate feed → mixing, cement feed → mixing. Два `Transfer` по MATERIAL и один SharedAsset `plant-power`. Дозирование воды и mixer/discharge находятся в mixing unit. Каждая линия `batch.concrete.v1` и не считается физически квалифицированной. Данный starter — *структурная гипотеза* для редактирования, а не утверждённый технологический рецепт, material balance или реальная спецификация мощности. 3 активные LINE требуют serverMaxActiveLines >=3; DRAFT не должен быть ограничен лимитом активных.
+
+**X-Ray dependencies:** отдельно отображать прямые и транзитивные входы/выходы; `Transfer` и `Dependency` не смешивать, группировать shared resource affected peers без O(n²) materialization всех пар. Помечать неподтверждённые process physics claims. Влияния между площадками не изобретать. При смене выбранного элемента сохранять user viewport.
+
+**Guardian:** `ERROR` (publication blocker), `WARNING` (needs review), `UNQUALIFIED` (lack of physical evidence). `physicallyQualified=false` в существующем Golden Model сохраняется, пока профиль процесса не прошёл независимую инженерную аттестацию. Указывать precise path `unit/equipment/port`; автоматически применяемые предложения без Preview и пользовательского согласия запрещены. Сервер перепроверяет все edits, клиентское состояние не доверенное.
+
+**Time Machine:** обязательны explicit actor, reason, UTC, site, blueprint/revision/hash, correlationId, expectedRevision/expectedPointer. Показывать `NOT_RECORDED` до production-identity/audit, никогда не выдумывать автора. Approval≠Publication≠Active state, Revoked not restorable; rollback инженерной конфигурации не отменяет физический run.
+
+### 31.4 Backend / Frontend architecture
+
+Frontend: React + TypeScript + React Flow; typed API client + domain view models, TanStack Query допустим для remote server state, Zustand/Redux необязателен для local canvas selection. Серверные значения revision, role, publication state, warnings and audit **не кешировать как authority** в браузере; invalidate after mutation. Shape of UI graph is a projection: Node/Edge IDs deterministic, no mutation of immutable Blueprint object via Canvas reordering. Canvas position changes persist in layout schema only, not Blueprint engineering snapshot. No fake PLC status.
+
+Backend already has `ProcessBlueprint`, `BlueprintValidator`, `BlueprintImpactAnalyzer`, `ExplainableValidation`, `EngineeringChangeManagement`, `HmiPreviewGenerator`. Extend via bounded DTO endpoints, site ownership and ETags/revision CAS; prefer existing modular monolith rather than new microservices. Dev-only concrete endpoint: `GET /api/v1/sites/{siteId}/blueprints/{blueprintId}/guided/concrete?unitPrefix=CP01`; only for empty Blueprint; generates non-persisted next revision; user must explicitly save. Production endpoints gated on trusted identity, role and idempotency; not through dev header alone.
+
+### 31.5 Multi-line behavior and negative cases
+
+- `Transfer` must join explicit compatible source OUT/target IN boundaries; no direct cross-unit reference to private equipment port.
+- A required transfer peer cannot be excluded from an activated subset when another peer is selected; `INACTIVE_TRANSFER_PEER` blocks.
+- `Dependency` graph cycles fail structural validation; shared resources validate EXCLUSIVE conflicts and sum of selected SHARED_CAPACITY demands.
+- Deleting equipment/line requires dry-run impact with downstream units, missing boundary/ports and shared resource consumers; user confirmation + server CAS.
+- Two simultaneous engineers editing same Blueprint must see `409`/revision conflict instead of silent lost update.
+- Missing incoming cement/aggregate or missing required mixer connection blocks publication; disconnected DRAFT can still be saved.
+- Revoking current active publication is blocked until replacement; restoring a revoked publication is blocked; historical ActivationSets stay immutable.
+- Layout-only change never changes revision hash, approved selection or temporal SignalBinding.
+
+### 31.6 Delivery stages and acceptance
+
+| Stage | Scope | Exit gate |
+|---|---|---|
+| RS-0 | React app scaffold, site/project navigation, palette/inspector, typed API, stable node IDs | Build/lint, browser smoke, site isolation, load/error/empty states |
+| RS-1 | Concrete three-line guided template, typed cross-line Canvas, Save/Reopen and separate Layout CAS | JUnit RED→GREEN core; PostgreSQL API E2E and Chromium save/reopen; no manual JSON |
+| RS-2 | X-Ray/Guardian, diff preview and explicit fixes | negative topology/fault oracles, no unconfirmed mutation, affected-line UI screenshots |
+| RS-3 | Time Machine, actor/reason and approval/publish/restore workflow | BCQ-G4 passed; PostgreSQL audit, idempotency and restart proofs |
+| RS-4 | HMI read-only and Integration Ready View | OT-0 contracts; UNKNOWN quality, simulator marking, no PLC write |
+| RS-5 | Independent engineer pilot | 5 interviews, 3 observed tasks, >=90% task completion target, documented engineering correctness and errors |
+
+### 31.7 Test-first scenario register
+
+| ID | Scenario / oracle |
+|---|---|
+| RS-001 | Concrete starter returns 3 distinct LINE units, 2 typed transfers, shared resource; profile-key `batch.concrete.v1` |
+| RS-002 | Starter passes **structural** Catalog/BlueprintReadiness, but `physicallyQualified=false`; no physical safety claim |
+| RS-003 | Removing a required cement-in binding blocks publication with `MISSING_REQUIRED_PORT` |
+| RS-004 | Activating mixing unit without feed lines returns `INACTIVE_TRANSFER_PEER` |
+| RS-005 | Server active-line quota of 2 blocks selection of 3 lines, but not DRAFT storage |
+| RS-006 | Invalid unitPrefix/path traversal rejected; no automatic persistence of guided draft |
+| RS-007 | Reopening saved graph restores exact stable IDs/transfers and independent layout positions |
+| RS-008 | Two editors race on expectedRevision; exactly one save wins |
+| RS-009 | X-Ray shows only actual upstream/downstream and SharedAsset users; no cross-site info |
+| RS-010 | Guardian error click focuses relevant unit/port; preview fix does not change state before confirmation |
+| RS-011 | Rev diff reports removed dependency and affected peer; actor/reason from ledger or explicitly unavailable |
+| RS-012 | Revoked publication cannot restore; history count advances for successful known-good restore |
+| RS-013 | HMI uses only published selection, live=false, UNKNOWN_NO_TELEMETRY and no device write |
+| RS-014 | Integration binding lifecycle independent of canvas layout; SIMULATED never labeled PHYSICAL |
+| RS-015 | Real browser Save→Close→Reopen passes with PostgreSQL and screenshot evidence, no manual SQL |
+
+**Release safety:** BCQ-G4 remains production gate; RS-0/RS-1 may be implemented under dev-local while not marketed as deployable enterprise multiuser app. Independent concrete domain expert must qualify material balance, actual physical quantities and site safety before any real commissioning.
+
