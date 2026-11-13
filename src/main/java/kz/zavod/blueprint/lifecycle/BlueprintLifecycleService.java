@@ -149,12 +149,12 @@ public class BlueprintLifecycleService {
         if(!Objects.equals(expectedPreviousSetId,site.activeSetId()))
             throw new BlueprintLifecycleException("STALE_ACTIVATION_SET");
         if(site.activeSetId()==null)throw new BlueprintLifecycleException("NO_ACTIVE_CONFIGURATION");
-        var historical=sets.findById(historicalSetId)
-                .orElseThrow(()->new BlueprintLifecycleException("UNKNOWN_RESTORE_TARGET"));
-        if(!siteId.equals(historical.siteId()))throw new SecurityException("SITE_ACCESS_DENIED");
         var current=sets.findById(site.activeSetId())
                 .orElseThrow(()->new BlueprintLifecycleException("INVALID_ACTIVATION_POINTER"));
         requireOwnedActivation(siteId,current);
+        var historical=sets.findById(historicalSetId)
+                .orElseThrow(()->new BlueprintLifecycleException("UNKNOWN_RESTORE_TARGET"));
+        if(!siteId.equals(historical.siteId()))throw new SecurityException("SITE_ACCESS_DENIED");
         if(current.blueprintId().equals(historical.blueprintId())
                 &&current.revisionNo()==historical.revisionNo()
                 &&current.selectedUnitsJson().equals(historical.selectedUnitsJson()))
