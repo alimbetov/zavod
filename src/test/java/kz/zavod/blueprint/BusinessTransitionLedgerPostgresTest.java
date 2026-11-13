@@ -92,6 +92,43 @@ class BusinessTransitionLedgerPostgresTest {
             ()->lifecycle.revoke(f.site(),f.blueprint(),1,"unsafe"));
         assertEquals(3,ledger.findBySiteIdOrderBySequenceNoAsc(f.site()).size());
     }
+    @Test void restoreAndRevokeAreJournaledWithCorrectPreviousSelectionAndReason() {
+        var f=setup();
+        actor("reviewer");
+        lifecycle.approve(f.site(),f.blueprint(),1,Set.of("L1"));
+        actor("publisher");
+        lifecycle.publish(f.site(),f.blueprint(),1);
+        actor("activator");
+        String first=lifecycle.activate(f.site(),f.blueprint(),1,null);
+        UUID nextBlueprint=UUID.randomUUID();
+        ownership.saveAndFlush(new BlueprintSiteEntity(nextBlueprint.toString(),f.site()));
+        var other=new Equipment("tank2","water-tank",1,
+            List.of(new Port("out",Direction.OUT,FlowKind.MATERIAL,"water",0,1)));
+        var nextUnit=new ProcessUnit("L2",UnitKind.LINE,"test.water-storage",
+            List.of(other),List.of(),List.of(),List.of(),List.of(),false);
+        drafts.saveDraft(new ProcessBlueprint(nextBlueprint,1,10,List.of(nextUnit),
+            List.of(),List.of(),List.of()),0);
+        actor("reviewer");
+        lifecycle.approve(f.site(),nextBlueprint,1,Set.of("L2"));
+        actor("publisher");
+        lifecycle.publish(f.site(),nextBlueprint,1);
+        actor("activator");
+        String second=lifecycle.activate(f.site(),nextBlueprint,1,first);
+        String restored=lifecycle.restore(f.site(),first,second,"Rollback to known configuration");
+        actor("publisher");
+        lifecycle.revoke(f.site(),nextBlueprint,1,"Unsafe for deployment");
+        var rows=ledger.findBySiteIdOrderBySequenceNoAsc(f.site());
+        assertEquals(8,rows.size());
+        assertEquals(List.of("APPROVE","PUBLISH","ACTIVATE","APPROVE","PUBLISH",
+                        "ACTIVATE","RESTORE","REVOKE"),
+            rows.stream().map(x->x.eventType().name()).toList());
+        assertEquals(second,rows.get(6).previousSetId());
+        assertEquals(restored,rows.get(6).newSetId());
+        assertEquals("Rollback to known configuration",rows.get(6).reason());
+        assertEquals("Unsafe for deployment",rows.get(7).reason());
+        ledgerVerifier.verifySite(f.site());
+    }
+
     @Test void journalInsertFailureRollsBackApprovalAtomically() {
         var f=setup();
         actor("reviewer");
