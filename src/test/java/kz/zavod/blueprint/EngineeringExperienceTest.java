@@ -96,6 +96,19 @@ class EngineeringExperienceTest {
                 ()->GuidedBlueprintBuilder.concreteStarter(id,2,10,"../../other-site",catalog));
     }
 
+    @Test void engineeringXRayTracesConcreteDependenciesWithoutInventingPhysics() {
+        var bp=GuidedBlueprintBuilder.concreteStarter(UUID.randomUUID(),2,10,"XR",catalog);
+        var mixer=EngineeringXRay.inspect(bp,"XR-MIX");
+        assertEquals(Set.of("XR-AGG","XR-CEM"),mixer.directUpstream());
+        assertEquals(Set.of("XR-AGG","XR-CEM"),mixer.upstream());
+        assertTrue(mixer.downstream().isEmpty());
+        assertEquals(Set.of("XR-AGG","XR-CEM"),mixer.sharedResourcePeers());
+        assertEquals(Set.of("plant-power"),mixer.sharedAssets());
+        var feeder=EngineeringXRay.inspect(bp,"XR-AGG");
+        assertEquals(Set.of("XR-MIX"),feeder.downstream());
+        assertThrows(IllegalArgumentException.class,()->EngineeringXRay.inspect(bp,"FOREIGN"));
+    }
+
     @Test void missingConcreteInterlineTransferCannotBePublished() {
         var initial=GuidedBlueprintBuilder.concreteStarter(UUID.randomUUID(),2,10,"CP02",catalog);
         var mixing=initial.units().get(2);
