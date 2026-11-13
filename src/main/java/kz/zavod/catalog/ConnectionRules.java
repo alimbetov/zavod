@@ -14,7 +14,7 @@ public final class ConnectionRules {
         if (source.direction() != EquipmentType.Direction.OUT || target.direction() != EquipmentType.Direction.IN) {
             return Verdict.DIRECTION_MISMATCH;
         }
-        if (!source.medium().equals(target.medium())) return Verdict.MEDIUM_MISMATCH;
+        if (!source.medium().equals(target.medium()) || source.streamKind()!=target.streamKind()) return Verdict.MEDIUM_MISMATCH;
         return Verdict.OK;
     }
 }

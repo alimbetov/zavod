@@ -17,13 +17,19 @@ public record EquipmentType(
     public enum Capability { STORE, MIX, DOSE, TRANSFER, PUMP, MEASURE, DISCHARGE, ISOLATE }
     public enum Mode { MANUAL_REQUEST, TIMED, RECIPE_PARAMETERS, CONTINUOUS_SETPOINT }
     public enum Direction { IN, OUT }
+    public enum StreamKind { MATERIAL, ITEM_FLOW, UTILITY, INSTRUMENT }
 
     /** A physical connection point. Media names are canonical, not translated UI labels. */
-    public record Port(String key, Direction direction, String medium, int minConnections, int maxConnections) {
+    public record Port(String key, Direction direction, String medium, int minConnections, int maxConnections, StreamKind streamKind) {
+        /** Compatibility constructor for the first material-flow equipment templates. */
+        public Port(String key, Direction direction, String medium, int minConnections, int maxConnections) {
+            this(key,direction,medium,minConnections,maxConnections,StreamKind.MATERIAL);
+        }
         public Port {
             requireKey(key, "port key");
             Objects.requireNonNull(direction, "port direction");
             requireKey(medium, "port medium");
+            Objects.requireNonNull(streamKind, "port stream kind");
             if (minConnections < 0 || maxConnections < minConnections || maxConnections < 1) {
                 throw new IllegalArgumentException("Invalid port cardinality for " + key);
             }

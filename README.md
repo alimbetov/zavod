@@ -1,34 +1,31 @@
-# Zavod IndustrialOS
+# Zavod — Physical Process OS
 
-**Единый нормативный источник истины:** [docs/ZAVOD-MASTER-SPEC.md](docs/ZAVOD-MASTER-SPEC.md)
+**Продукт:** универсальная платформа моделирования физических процессов. **Zavod Blueprint** — единая цифровая инженерная схема объекта, из которой в следующих этапах будут строиться симуляция, HMI/SCADA, MES и производственный учёт.
 
-**Статус:** Draft / на согласование · 13 ноября 2026  
-**Архитектура:** React + TypeScript + React Flow (UI), Java 21 / Spring Boot / PostgreSQL (Backend), отдельный Industrial Edge read-only (будущий этап).  
-**Продукт:** универсальный инженерный конструктор 1–10 активных разнотипных линий на площадке, с будущими SCADA/HMI/MES.  
-**Политика зависимостей:** бесплатный OSS; Apache-2.0 предпочтительно; MIT/BSD/ISC допустимы после проверки обязательств и уведомлений. React и React Flow — MIT, Vaadin Flow в MVP не используется.
+**Единственное нормативное ТЗ:** [docs/ZAVOD-MASTER-SPEC.md](docs/ZAVOD-MASTER-SPEC.md). Не создавать конкурирующих документов требований.
 
-> Репозиторий на этом этапе в основном содержит **ТЗ**. Java Equipment Catalog уже включён в исходники проекта, а React Line Designer R0.1 — во внешнем архиве, ещё не импортирован. Реальная SCADA/MES и PLC интеграция **не реализованы**. Safety-critical управление остаётся в независимых PLC и защитных цепях.
+## Реализовано в репозитории
 
-## Документация
+- Java 21 Smart Equipment Library с версионированными шаблонами, типизированными портами и каталогом оборудования.
+- Лабораторная генерация/эмуляция 1, 10, 50, 99 связанных разнотипных производственных линий; это **не физический Digital Twin**.
+- Универсальный `ProcessBlueprint` для LINE / CIRCUIT / ZONE / STATION, структурная проверка и диагностика.
+- `BlueprintDiff` и `BlueprintImpactAnalyzer` без квадратичного materialization общего ресурса; `ResourcePolicyValidator`.
+- JPA/PostgreSQL append-only Blueprint revisions, атомарный BlueprintHead CAS, controlled revision conflicts, SHA-256 snapshot integrity.
+- Java/JUnit/Testcontainers smoke и интеграционные тесты, GitHub Actions на `main`.
 
-**Только один мастер-документ:** [ZAVOD-MASTER-SPEC.md](docs/ZAVOD-MASTER-SPEC.md)
+## Ещё НЕ реализовано / НЕ квалифицировано
 
-Он включает бизнес-сценарии, модель Plant/Line/Equipment/Port/Signal, периферию и отраслевые линии, роли, авторизацию, архитектуру, требования FR/NFR, Industrial Edge, OT-безопасность, 70 запланированных сценариев, дорожную карту и решения DEC. Никаких параллельных ТЗ и отдельных roadmap/safety/test файлов.
+- Визуальный React Blueprint Studio: standalone-прототип пока не перенесён.
+- Полноценные persisted `PlantActivationSet`, actor/site-scoped RBAC, серверный workflow APPROVED/PUBLISHED, идемпотентный HTTP API.
+- Проверка полного каталога и физического процесса для всех 99 синтетических линий; реальный line capacity / material balance.
+- 99 физических PLC, промышленная SCADA/MES, real hardware/OT FAT/SAT, HMI и управление реальным оборудованием.
 
-Предыдущие документы сохранены в истории Git, но удалены из рабочей структуры, чтобы избежать расхождений.
+**Технологии:** Java 21 / Spring Boot / JPA / PostgreSQL; React + TypeScript + React Flow (следующий этап); бесплатный OSS (Apache-2.0 предпочтительно, MIT и другие совместимые permissive лицензии допустимы с уведомлениями). Vaadin Flow не используется. Liquibase/Flyway пока нет. `spring.jpa.hibernate.ddl-auto=update` только для DEV; в PROD `validate` и отдельная квалификация схемы.
 
 ## Рабочий процесс
 
-Scenario Design → RED → Test Review → GREEN → Regression → Independent Review → Draft PR → Merge.  
-Изменения проекта только в рабочих ветках, `main` — базовая ветка после review.
+**Единственная активная ветка разработки — `main`.** Новых feature-веток не создаём без отдельного решения. Разработка на `main` сопровождается обязательным CI и явным указанием непокрытых рисков. Исторические PR #1–#4 остаются в GitHub для трассируемости.
 
-## История изменений
+## Safety
 
-- [PR #1 — единое мастер-ТЗ и интеграция в main](https://github.com/alimbetov/zavod/pull/1)
-- [PR #2 — Java Smart Equipment Library](https://github.com/alimbetov/zavod/pull/2)
-
-Актуальные статусы PR и проверок смотрите в GitHub. Статус готовности промышленной системы определяется отдельными испытаниями, а не фактом merge.
-
-## Риск промышленной безопасности
-
-По умолчанию нет команд реальному PLC. Виртуальная симуляция не подключена к исполнительным механизмам. OPC UA/Modbus read-only только после отдельного OT review. Ограниченные команды на реальные установки — отдельный safety-gated release с FAT/SAT.
+Без управляющих команд физическому PLC. Safety interlocks и E-stop остаются в независимых аппаратных/PLC-системах. Реальные OPC UA/Modbus read-only только после OT-аудита. Лабораторная модель не сертифицирована для управления производством.

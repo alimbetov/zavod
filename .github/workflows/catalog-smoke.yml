@@ -3,7 +3,7 @@ name: catalog-smoke
 on:
   push:
     branches:
-      - feat/r0-smart-equipment-library
+      - main
   pull_request:
     paths:
       - 'src/main/java/kz/zavod/catalog/**'

@@ -12,14 +12,18 @@ import static kz.zavod.catalog.EquipmentType.Mode.*;
 /** Fixed v0 catalogue: 15 equipment definitions and two complete pilot profiles. */
 public final class EquipmentCatalog {
     private final Map<String, EquipmentType> types;
+    private final Map<TemplateId, EquipmentType> versions;
+    public record TemplateId(String key,int version) {}
     private final Map<String, IndustryProfile> profiles;
 
     public EquipmentCatalog(List<EquipmentType> equipment, List<IndustryProfile> lineProfiles) {
         var nextTypes = new HashMap<String, EquipmentType>();
+        var byVersion = new HashMap<TemplateId,EquipmentType>();
         for (var type : equipment) {
-            if (nextTypes.putIfAbsent(type.key(), type) != null) {
-                throw new IllegalArgumentException("Duplicate equipment type: " + type.key());
+            if (byVersion.putIfAbsent(new TemplateId(type.key(),type.version()),type) != null) {
+                throw new IllegalArgumentException("Duplicate equipment type/version: " + type.key()+"/"+type.version());
             }
+            nextTypes.merge(type.key(), type, (a,b)->a.version()>=b.version()?a:b);
         }
         var nextProfiles = new HashMap<String, IndustryProfile>();
         for (var profile : lineProfiles) {
@@ -33,10 +37,17 @@ public final class EquipmentCatalog {
             }
         }
         types = Map.copyOf(nextTypes);
+        versions = Map.copyOf(byVersion);
         profiles = Map.copyOf(nextProfiles);
     }
 
     public Map<String, EquipmentType> types() { return types; }
+    public Map<TemplateId,EquipmentType> versions() { return versions; }
+    public EquipmentType type(String key,int version) {
+        EquipmentType type=versions.get(new TemplateId(key,version));
+        if(type==null)throw new IllegalArgumentException("Unknown equipment type/version: "+key+"/"+version);
+        return type;
+    }
     public Map<String, IndustryProfile> profiles() { return profiles; }
 
     public EquipmentType type(String key) {
@@ -78,7 +89,8 @@ public final class EquipmentCatalog {
             item("discharge", "Discharge", DISCHARGE, Set.of(), port("product-in", IN, "concrete", 1)),
             item("process-tank", "Process tank", STORE, Set.of(), port("water-out", OUT, "water", 0)),
             item("water-pump", "Water pump", PUMP, Set.of(MANUAL_REQUEST, CONTINUOUS_SETPOINT), port("water-in", IN, "water", 1), port("water-out", OUT, "water", 0)),
-            item("pressure-sensor", "Pressure measurement", MEASURE, Set.of(), port("water-in", IN, "water", 1), port("water-out", OUT, "water", 0)),
+            item("pressure-sensor", "Pressure measurement", MEASURE, Set.of(),
+                new EquipmentType.Port("measurement",IN,"pressure",0,1,EquipmentType.StreamKind.INSTRUMENT)),
             item("shutoff-valve", "Shutoff valve", ISOLATE, Set.of(MANUAL_REQUEST), port("water-in", IN, "water", 1), port("water-out", OUT, "water", 0))
         );
         var profiles = List.of(
