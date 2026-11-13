@@ -145,6 +145,23 @@ class BusinessTransitionLedgerPostgresTest {
         assertThrows(IllegalStateException.class,()->ledgerVerifier.verifySite(f.site()));
     }
 
+    @Test void provenanceTamperBreaksHashChainAndRevisionDigestComparison() {
+        var f=setup();
+        actor("reviewer");
+        lifecycle.approve(f.site(),f.blueprint(),1,Set.of("L1"));
+        ledgerVerifier.verifySite(f.site());
+        jdbc.update("update business_transition set correlation_id=? where site_id=?",
+                "forged-correlation",f.site());
+        assertThrows(IllegalStateException.class,()->ledgerVerifier.verifySite(f.site()));
+
+        var second=setup();
+        actor("reviewer");
+        lifecycle.approve(second.site(),second.blueprint(),1,Set.of("L1"));
+        jdbc.update("update blueprint_revision set content_hash=? where blueprint_id=?",
+                "0".repeat(64),second.blueprint().toString());
+        assertThrows(IllegalStateException.class,()->ledgerVerifier.verifySite(second.site()));
+    }
+
     @Test void journalInsertFailureRollsBackApprovalAtomically() {
         var f=setup();
         actor("reviewer");
