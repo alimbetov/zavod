@@ -53,6 +53,8 @@ class EngineeringExperienceTest {
         var again=cache.impact(before,after);
         assertEquals(first,again);
         assertEquals(1,cache.impactHits());
+        assertThrows(IllegalArgumentException.class,()->cache.impact(after,before),
+                "Reversed revisions must be rejected even when cache is warm");
         var change=EngineeringChangeManagement.compare(before,after,again);
         assertEquals("NOT_RECORDED",change.changedBy());
         assertFalse(change.canRestoreWithoutApproval());
