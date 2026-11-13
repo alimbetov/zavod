@@ -303,7 +303,9 @@ class ActivationCommandPostgresTest {
         assertEquals(ActivationCommandService.OutcomeState.NOT_OBSERVED_RETRY,
                 commands.observe(f.site(),"missing").state());
         assertNull(commands.observe(f.site(),"missing").activationSetId());
-        assertThrows(BlueprintLifecycleException.class,()->commands.reconcile(f.site(),"missing"));
+        var unobserved=assertThrows(BlueprintLifecycleException.class,
+                ()->commands.reconcile(f.site(),"missing"));
+        assertEquals("COMMAND_OUTCOME_NOT_OBSERVED_RETRY",unobserved.getMessage());
         actor("reviewer");
         assertThrows(SecurityException.class,()->commands.activate(f.site(),"blocked",f.blueprint(),1,null));
         assertEquals(0,receipts.countBySiteId(f.site()));
