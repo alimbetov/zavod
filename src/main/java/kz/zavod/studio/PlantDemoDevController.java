@@ -147,7 +147,7 @@ public class PlantDemoDevController {
             return registry.registerSimulated(new SignalDefinition(UUID.randomUUID(),
                     siteId,blueprintId,revision,mixing.id(),equipment.id(),
                     SIGNAL_KEY,"bar",SourceKind.SIMULATED,Duration.ofMinutes(2)));
-        } catch(org.springframework.dao.DataIntegrityViolationException race) {
+        } catch(TelemetryIngestionConflict race) {
             // Concurrent simulations may both see "not yet registered".
             // The DB uniqueness constraint serializes the logical mapping;
             // recover from the committed winner AFTER the failed transaction.
