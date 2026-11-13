@@ -235,6 +235,40 @@ class BlueprintBusinessJourneyPostgresTest {
         assertEquals(1,sets.countBySiteId(f.siteId()));
     }
 
+
+    @Test
+    void corruptedActivePointerAcrossSitesIsAlwaysRejected() {
+        Fixture owner=setup(1);
+        Fixture foreign=setup(1);
+        actor("reviewer");
+        lifecycle.approve(foreign.siteId(),foreign.id(),2,foreign.selected());
+        lifecycle.approve(owner.siteId(),owner.id(),2,owner.selected());
+        actor("publisher");
+        lifecycle.publish(foreign.siteId(),foreign.id(),2);
+        lifecycle.publish(owner.siteId(),owner.id(),2);
+        actor("activator");
+        String foreignSet=lifecycle.activate(foreign.siteId(),foreign.id(),2,null);
+        assertEquals(1,sets.countBySiteId(foreign.siteId()));
+
+        // A buggy database restore or manual SQL repair points owner's Site to
+        // a perfectly valid but FOREIGN immutable activation set.
+        assertEquals(1,jdbc.update("update site set active_set_id=? where site_id=?",
+                foreignSet,owner.siteId()));
+        actor("viewer");
+        assertEquals("INVALID_ACTIVATION_POINTER",assertThrows(
+                BlueprintLifecycleException.class,
+                ()->lifecycle.active(owner.siteId())).getMessage(),
+                "OI-011: view must not disclose cross-site active selection");
+        actor("activator");
+        assertEquals("INVALID_ACTIVATION_POINTER",assertThrows(
+                BlueprintLifecycleException.class,
+                ()->lifecycle.activate(owner.siteId(),owner.id(),2,foreignSet)).getMessage(),
+                "OI-011: corrupted pointer must not become previousSetId in new chain");
+        assertEquals(0,sets.countBySiteId(owner.siteId()));
+        assertEquals(foreignSet,sites.findById(owner.siteId()).orElseThrow().activeSetId());
+        assertEquals(1,sets.countBySiteId(foreign.siteId()));
+    }
+
     @Test
     void concurrentApprovalIsExactlyOnceAndConflictIsDomainControlled() throws Exception {
         Fixture f=setup(3);
