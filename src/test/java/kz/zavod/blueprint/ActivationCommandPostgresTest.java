@@ -88,6 +88,8 @@ class ActivationCommandPostgresTest {
         assertEquals(initial.activationSetId(),afterLostHttpResponse.activationSetId());
         assertEquals(initial.activationSetId(),
                 commands.reconcile(f.site(),"command-1").activationSetId());
+        assertEquals(ActivationCommandService.OutcomeState.COMMITTED,
+                commands.observe(f.site(),"command-1").state());
         assertEquals(1,receipts.countBySiteId(f.site()));
         assertEquals(1,transitions.countBySiteId(f.site()));
         assertEquals(1,sets.countBySiteId(f.site()));
@@ -190,6 +192,9 @@ class ActivationCommandPostgresTest {
 
     @Test void nonCommittedOrUnauthorizedCommandNeverClaimsSuccess(){
         var f=published();
+        assertEquals(ActivationCommandService.OutcomeState.NOT_OBSERVED_RETRY,
+                commands.observe(f.site(),"missing").state());
+        assertNull(commands.observe(f.site(),"missing").activationSetId());
         assertThrows(BlueprintLifecycleException.class,()->commands.reconcile(f.site(),"missing"));
         actor("reviewer");
         assertThrows(SecurityException.class,()->commands.activate(f.site(),"blocked",f.blueprint(),1,null));
