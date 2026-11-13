@@ -98,12 +98,17 @@ class EngineeringExperienceTest {
 
     @Test void missingConcreteInterlineTransferCannotBePublished() {
         var initial=GuidedBlueprintBuilder.concreteStarter(UUID.randomUUID(),2,10,"CP02",catalog);
+        var mixing=initial.units().get(2);
+        var invalidMixing=new ProcessUnit(mixing.id(),mixing.kind(),mixing.profileKey(),
+                mixing.equipment(),mixing.connections(),
+                mixing.boundaries().stream().filter(x->!x.key().equals("cement-in")).toList(),
+                mixing.resources(),mixing.measurements(),mixing.recirculationAllowed());
         var missing=new ProcessBlueprint(initial.id(),initial.revision(),10,
-                initial.units(),initial.sharedAssets(),
-                List.of(initial.transfers().get(0)),initial.dependencies());
+                List.of(initial.units().get(0),initial.units().get(1),invalidMixing),
+                initial.sharedAssets(),List.of(initial.transfers().get(0)),initial.dependencies());
         var blockers=BlueprintReadiness.blockers(missing,catalog);
-        // The missing external cement feed is a required mixer port, so
-        // publication must fail even when the remaining topology is valid.
+        // Removing the cement feed boundary leaves the required mixer port
+        // disconnected; publication must refuse the incomplete physical path.
         assertTrue(blockers.stream().anyMatch(x->x.code().equals("MISSING_REQUIRED_PORT")),
                 blockers.toString());
     }
