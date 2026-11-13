@@ -93,6 +93,18 @@ public final class BcqRecoveryProcess {
         actor("activator");
         String activationId=lifecycle.activate(siteId,base.id(),2,null);
         check(lifecycle.active(siteId).id().equals(activationId),"activation pointer before JVM crash");
+        // Exercise the full published -> upgraded -> restored -> revoked historical chain
+        // before SIGKILL. The separate verifier must recover this precise chain.
+        ProcessBlueprint revision3=new ProcessBlueprint(base.id(),3,10,
+                revision2.units(),revision2.sharedAssets(),revision2.transfers(),revision2.dependencies());
+        studio.saveDraft(siteId,base.id(),2,revision3);
+        actor("reviewer");lifecycle.approve(siteId,base.id(),3,Set.of("L001"));
+        actor("publisher");lifecycle.publish(siteId,base.id(),3);
+        actor("activator");
+        String upgradedId=lifecycle.activate(siteId,base.id(),3,activationId);
+        String restoredId=lifecycle.restore(siteId,activationId,upgradedId,"BCQ-G3 rollback after regression");
+        actor("publisher");lifecycle.revoke(siteId,base.id(),3,"BCQ-G3 blocked revision");
+        check(lifecycle.active(siteId).id().equals(restoredId),"restored pointer before JVM crash");
 
         ProcessBlueprint emptyLab=studio.create(siteId);
         UUID labId=emptyLab.id();
@@ -106,7 +118,9 @@ public final class BcqRecoveryProcess {
         p.setProperty("siteId",siteId);
         p.setProperty("activeBlueprintId",base.id().toString());
         p.setProperty("labBlueprintId",labId.toString());
-        p.setProperty("activationId",activationId);
+        p.setProperty("activationId",restoredId);
+        p.setProperty("originalActivationId",activationId);
+        p.setProperty("upgradedActivationId",upgradedId);
         p.setProperty("activeHash",hash(jdbc,base.id(),2));
         p.setProperty("labHash",hash(jdbc,labId,2));
         try(var writer=Files.newBufferedWriter(manifest)) {p.store(writer,"BCQ-G3 crash-and-recover qualification");}
@@ -138,14 +152,23 @@ public final class BcqRecoveryProcess {
         check(working.units().get(0).equipment().get(0).id().equals("T001"),"active equipment stable id");
         check(approvals.findById(activeBlueprintId+":2").orElseThrow().state()
                 ==BlueprintApprovalEntity.State.PUBLISHED,"approval state");
-        check(sets.countBySiteId(siteId)==1,"only one activation");
+        check(sets.countBySiteId(siteId)==3,"original, upgraded and restored sets retained");
+        check(approvals.findById(activeBlueprintId+":3").orElseThrow().state()
+                ==BlueprintApprovalEntity.State.REVOKED,"revoked upgrade persisted");
+        String originalId=str(p,"originalActivationId");
+        String upgradedId=str(p,"upgradedActivationId");
+        check(sets.findById(originalId).orElseThrow().revisionNo()==2,"original revision remains immutable");
+        check(sets.findById(upgradedId).orElseThrow().revisionNo()==3,"upgraded revision retained");
+        check(drafts.loadRevision(activeBlueprintId,3).revision()==3,"revoked revision snapshot preserved");
         actor("viewer");
         var active=lifecycle.active(siteId);
         check(active.id().equals(activationId),"active set id");
         check(active.revisionNo()==2L,"active set revision");
         check(active.blueprintId().equals(activeBlueprintId.toString()),"active blueprint");
         check(active.selectedUnitsJson().contains("L001"),"selected units");
-        check(active.previousSetId()==null,"no phantom previous set");
+        check(active.previousSetId().equals(str(p,"upgradedActivationId")),"restore previous pointer");
+        check(active.restoredFromSetId().equals(str(p,"originalActivationId")),"restore historical target");
+        check("BCQ-G3 rollback after regression".equals(active.changeReason()),"restore reason persisted");
 
         ProcessBlueprint actual=drafts.loadRevision(labId,2);
         ProcessBlueprint expected=LabBlueprintAdapter.fromLab(labId,2,PlantScenarios.generate(99,99));
