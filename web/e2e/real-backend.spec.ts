@@ -107,6 +107,10 @@ test('TF-03: real PostgreSQL simulated telemetry is revision-bound, visible and 
   await monitor.getByRole('button',{name:'Обновить'}).click();
   await expect(monitor.getByText('CURRENT')).toBeVisible();
   await expect(monitor.getByText('2.5 bar')).toBeVisible();
+  await monitor.getByRole('combobox',{name:'Период телеметрии'}).selectOption('5');
+  await expect(monitor.getByText('2.5 bar')).toBeVisible();
+  await monitor.getByRole('checkbox',{name:/Автообновление/}).check();
+  await expect(monitor.getByRole('checkbox',{name:/Автообновление/})).toBeChecked();
   const stale=await page.request.post(base+'/signals/'+signalId+'/samples',{
     headers:{'X-Zavod-Dev-Write':'true'},
     data:{eventId:'tf03-e2e-2',value:1.1,unitCode:'bar',
@@ -116,5 +120,14 @@ test('TF-03: real PostgreSQL simulated telemetry is revision-bound, visible and 
   // Older sample must not replace the newer source timestamp.
   await monitor.getByRole('button',{name:'Обновить'}).click();
   await expect(monitor.getByText('2.5 bar')).toBeVisible();
+  const bad=await page.request.post(base+'/signals/'+signalId+'/samples',{
+    headers:{'X-Zavod-Dev-Write':'true'},
+    data:{eventId:'tf03-e2e-3',value:0,unitCode:'bar',
+      sourceTime:new Date().toISOString(),quality:'BAD'}
+  });
+  expect(bad.status()).toBe(200);
+  await monitor.getByRole('button',{name:'Обновить'}).click();
+  await expect(monitor.getByText('UNTRUSTED')).toBeVisible();
+  await expect(monitor.getByText('Значение не подтверждено')).toBeVisible();
   await page.screenshot({path:test.info().outputPath('tf03-real-postgres-monitor.png'),fullPage:true});
 });
