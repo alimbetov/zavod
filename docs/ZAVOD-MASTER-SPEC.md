@@ -1388,3 +1388,14 @@ spring.datasource.hikari.connection-timeout=30000
 **Definition of Done для R0.5Q:** все P0 AUD-001…010 закрыты инженерными тестами и ревью; нет публикации без server-side validation, все concurrent writes дают предсказуемый результат, старые snapshots immutable, точно известен круг затронутых модулей и корректный активный revision set. P1 benchmark/robustness обязательны прежде, чем утверждать готовность управлять/мониторить 99 производственных линий. SCADA/MES и производство реального PLC из этого не следуют.
 
 **Ограничения:** никаких Kafka, Redis, отдельной графовой БД, микросервисного рефакторинга, arbitrary user scripts и команд на реальные safety-контроллеры на текущем этапе. Архитектурные решения проектировать по проверяемым сценариям, не по предполагаемому масштабу.
+
+
+### 19.10 Implementation checkpoint — исправления в ветке R0.5 до объединения в main
+
+**Реализовано и проверяется CI:** BlueprintDiff, линейно индексированный SharedAsset Impact без peer-clique, ресурсная диагностика и запрет перегрузки при preflight, версионированные EquipmentType с StreamKind, проверка физических BoundaryPort и duplicate ResourceUse, право сохранять 99 Draft при server-owned quota для выбранных ACTIVE LINE, атомарный PostgreSQL BlueprintHead CAS и typed revision conflicts, тесты конкурентных Revision 2 и проверки corrupted JSON/schema. Для нужного сценария 99 связанных линий реализован точный golden Impact oracle; повторный порядок графических элементов не считается изменением.
+
+**Незакрытые пункты, запрещающие маркировать продукт production-ready:** persisted PlantActivationSet и Approved/Published lifecycle с авторизованным actor/Site, HTTP RBAC и идемпотентность по ключу, реальный рестарт JVM и backup/restore, версия ProcessProfile/полная catalog qualification, property-based 10 000 seeds, production performance 99/500/1000, количественный симулятор, R0.6 React Studio, HMI, OT qualification. Не заменять эти факты общим «CI PASS».
+
+**Важная семантика:** `BlueprintPublicationGate.preflight()` проверяет только выбранные активные модули, а не все черновики. Это read-only preflight и **не** persisted activation API. `ProcessBlueprint.maxActiveLines` сохраняется в старом контракте JSON ради совместимости, но ограничение активации берётся из серверной политики, не из пользовательского снимка. Старые снимки остаются читаемыми. Для будущего persisted ActivationSet добавить site ownership и approvals перед доступом через сеть.
+
+**Режим работы после интеграции:** единственный `main`, без создания дополнительных веток по умолчанию. GitHub Actions автоматически запускаются на `main`. Новые требования вносятся только в этот файл.

@@ -2,7 +2,7 @@ name: blueprint-r05
 on:
   push:
     branches:
-      - feat/r0-5-universal-blueprint-jpa
+      - main
   pull_request:
     paths:
       - 'pom.xml'

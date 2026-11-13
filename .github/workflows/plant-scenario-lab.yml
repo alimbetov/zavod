@@ -3,7 +3,7 @@ name: plant-scenario-lab
 on:
   push:
     branches:
-      - feat/r0-4-plant-99-scenario-lab
+      - main
   pull_request:
     paths:
       - 'src/main/java/kz/zavod/lab/**'
