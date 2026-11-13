@@ -8,7 +8,10 @@ javac --release 21 -d "$BIN" \
  src/main/java/kz/zavod/lab/*.java \
  src/main/java/kz/zavod/blueprint/domain/*.java \
  src/test/java/kz/zavod/blueprint/BlueprintCoreSmoke.java \
- src/test/java/kz/zavod/blueprint/BlueprintHardeningSmoke.java
+ src/test/java/kz/zavod/blueprint/BlueprintHardeningSmoke.java \
+ src/test/java/kz/zavod/blueprint/BlueprintFuzzSmoke.java
 java -cp "$BIN" kz.zavod.blueprint.BlueprintCoreSmoke
 
 java -cp "$BIN" kz.zavod.blueprint.BlueprintHardeningSmoke
+
+java -cp "$BIN" kz.zavod.blueprint.BlueprintFuzzSmoke
