@@ -26,5 +26,11 @@ public class ActivationTransitionEntity {
         this.blueprintId=blueprintId;this.revisionNo=revisionNo;
         this.previousSetId=previousSetId;this.newSetId=newSetId;this.createdAt=Instant.now();
     }
+    public String commandId(){return commandId;}
+    public String siteId(){return siteId;}
+    public String actorId(){return actorId;}
+    public String blueprintId(){return blueprintId;}
+    public long revisionNo(){return revisionNo;}
+    public String previousSetId(){return previousSetId;}
     public String newSetId(){return newSetId;}
 }
