@@ -65,6 +65,18 @@ public final class PlantScenarioLabTest {
         Line badSensor=new Line(continuous.id(),continuous.profile(),continuous.nodes(),continuous.edges(),continuous.boundaries(),continuous.demands(),invalidMeasurement);
         List<Line> withBadSensor=new ArrayList<>(graph.lines());withBadSensor.set(1,badSensor);
         error(new Plant(graph.id(),99,withBadSensor,graph.assets(),graph.transfers(),graph.dependencies()),"INVALID_MEASUREMENT_ATTACHMENT");
+        Node cycleA=new Node("cycle-a","valve",List.of(new Port("in",Direction.IN,StreamKind.MATERIAL,"water",1,1),new Port("out",Direction.OUT,StreamKind.MATERIAL,"water",1,1)));
+        Node cycleB=new Node("cycle-b","pump",List.of(new Port("in",Direction.IN,StreamKind.MATERIAL,"water",1,1),new Port("out",Direction.OUT,StreamKind.MATERIAL,"water",1,1)));
+        Line cyclicMaterial=new Line("CYCLE",ProcessKind.CONTINUOUS,List.of(cycleA,cycleB),List.of(new Edge("cycle-a","out","cycle-b","in"),new Edge("cycle-b","out","cycle-a","in")),List.of(),List.of(),List.of());
+        error(new Plant("negative-cycle",99,List.of(cyclicMaterial),List.of(),List.of(),List.of()),"MATERIAL_CYCLE");
+        Node badInlet=new Node("bad-in","cement-inlet",List.of(new Port("in",Direction.IN,StreamKind.MATERIAL,"cement",1,1)));
+        Node waterSource=new Node("water-src","water-source",List.of(new Port("out",Direction.OUT,StreamKind.MATERIAL,"water",1,1)));
+        Line mixed=new Line("MIXED",ProcessKind.BATCH,List.of(waterSource,badInlet),List.of(new Edge("water-src","out","bad-in","in")),List.of(),List.of(),List.of());
+        error(new Plant("negative-medium",99,List.of(mixed),List.of(),List.of(),List.of()),"INCOMPATIBLE_STREAM");
+        Plant transferPlant=PlantScenarios.generate(7,99);
+        List<Transfer> extraFanout=new ArrayList<>(transferPlant.transfers());
+        extraFanout.add(new Transfer("L002","water-out","L007","water-supply"));
+        error(new Plant(transferPlant.id(),99,transferPlant.lines(),transferPlant.assets(),extraFanout,transferPlant.dependencies()),"TRANSFER_FANOUT_UNSUPPORTED");
         ok(PlantScenarios.generate(99,99).transfers().size()>20,"Cross-line transfers exercised");
         ok(PlantScenarios.generate(99,99).dependencies().size()>10,"Cross-line precedence exercised");
         ok(PlantScenarios.generate(99,99).lines().stream().flatMap(l->l.demands().stream()).map(ResourceDemand::assetId).distinct().count()==2,"Shared assets exercised");
