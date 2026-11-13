@@ -1,6 +1,8 @@
 package kz.zavod.studio;
 
 import kz.zavod.blueprint.persistence.BlueprintRevisionConflict;
+import kz.zavod.telemetry.TelemetryMonitorDevController;
+import kz.zavod.telemetry.TelemetryIngestionConflict;
 import java.util.Map;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.*;
@@ -8,11 +10,11 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 
 /** Stable, non-SQL error codes for the local studio API. */
-@RestControllerAdvice(assignableTypes={StudioDevController.class,EngineeringProjectDevController.class})
+@RestControllerAdvice(assignableTypes={StudioDevController.class,EngineeringProjectDevController.class,TelemetryMonitorDevController.class})
 @Profile("dev-local")
 public class StudioDevExceptionHandler {
     public record ApiError(String code,String message) {}
-    @ExceptionHandler({StudioConflictException.class,BlueprintRevisionConflict.class})
+    @ExceptionHandler({StudioConflictException.class,BlueprintRevisionConflict.class,TelemetryIngestionConflict.class})
     ResponseEntity<ApiError> conflict(IllegalStateException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError("REVISION_CONFLICT",ex.getMessage()));
     }
