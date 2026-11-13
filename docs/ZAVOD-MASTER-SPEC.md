@@ -2825,3 +2825,68 @@ Backend already has `ProcessBlueprint`, `BlueprintValidator`, `BlueprintImpactAn
 
 **Release safety:** BCQ-G4 remains production gate; RS-0/RS-1 may be implemented under dev-local while not marketed as deployable enterprise multiuser app. Independent concrete domain expert must qualify material balance, actual physical quantities and site safety before any real commissioning.
 
+
+
+### 31.8 RS-K7 — Associative SVG Component System & Semantic Plant Mimic (proposal)
+
+**Product differentiator:** Canvas objects are not generic rectangular cards. Render equipment as recognizable, *semantic* SVG symbols: concrete silo, aggregate bin, belt conveyor, scales, mixer, pump, valve, tank, temperature/pressure sensor, discharge. A symbol is a pure visual projection of a version-pinned `EquipmentType` and `EquipmentInstance`; never generate engineering authority by parsing SVG.
+
+**Component registry contract:** `symbolKey + symbolVersion + equipmentTypeKey + compatibleCatalogVersions + viewBox + namedAnchors + supportedStates + accessibilityLabel`. SVG must be deterministic, sanitized, no executable markup or external URLs, no arbitrary HTML or user-uploaded SVG without review. Preserve stable node IDs; anchor positions correspond to `Port` keys and `Boundary` contracts. Connections route through semantically typed anchors, including inter-unit `Transfer`, and scale with pan/zoom. Allow replacing an SVG theme without modifying Blueprint revision or temporal SignalBinding. Use simple reusable symbols under `web/src/components/plant-symbols/`; do not place large raw SVG source in Blueprint JSON.
+
+**Associative/nested composition:** `Equipment → ProcessUnit → Line Group → Zone/Area → Site`. Group or collapse a line without removing equipment or dependencies; highlight attached upstream/downstream lines and shared resources via Engineering X-Ray. Support reusable `SubassemblyTemplate` (e.g. dosing station = scale+doser+valve) with local IDs namespaced on insertion and mapping validation. A reusable component is an editable composition, not hidden nested PLC control logic. Show both top-down process overview and equipment detail using the same immutable source model.
+
+**Generator candidates (future opt-in):** `SVG Symbol Generator` from trusted catalog metadata and vetted primitives, with templates for silo/tank/pump/conveyor/mixer. Generation produces icon geometry and port anchor layout only, not safety setpoints, physical drawings, P&ID compliance, material properties or engineering rules. Generated assets must pass static sanitization, port-coverage and snapshot rendering tests.
+
+### 31.9 RS-K8 — Observed Equipment State Overlays (read-only)
+
+**Separate three independent dimensions, never merge them into one enum:** (1) engineering lifecycle `DRAFT/APPROVED/PUBLISHED/ACTIVATED/REVOKED`; (2) observed operating state `INACTIVE/STARTING/RUNNING/WARNING/ALARM` from trusted state bindings or explicitly qualified rules; (3) signal freshness/provenance `GOOD/UNCERTAIN/BAD/STALE/OFFLINE/UNKNOWN` + `PHYSICAL/SIMULATED/IMPORTED`. No operating status may be derived from Blueprint `ACTIVATED`: this only selects engineering config, never proves actual machinery runs.
+
+| Operating state | Recommended rendering | Required evidence |
+|---|---|---|
+| INACTIVE | Gray #64748b, paused icon | A trusted state signal explicitly reports stopped; not simply missing telemetry |
+| STARTING | Light green #86efac, slow pulse + starting label | Trusted state reports transition to starting; no optimistic fake start after engineer clicked |
+| RUNNING | Green #16a34a, stable ring + running label | Qualified current state signal or site-authorized derived rule |
+| WARNING | Amber #f59e0b, warning triangle | Source-qualified non-safety deviation, with rule and affected signal evidence |
+| ALARM | Red #dc2626, distinct critical icon + alarm text | Trusted OT alarm or separately approved application alarm rule; not assumed to replace PLC safety alarms |
+| UNKNOWN | Neutral outlined/hatched state + '?' | No binding, no valid state source, or quality unknown |
+| OFFLINE / STALE | Neutral outline with crossed link / clock + age | Transport disconnected or data older than freshness limit; prior RUNNING must **not** remain visually current |
+
+**Priority rule:** stale/offline/unknown provenance overrides any implied current green/red operating status; raw last-known reading can be displayed only as historical with timestamp. Alarm history can remain visible but distinctly marked `last known` until fresh evidence. WARNING and ALARM may overlap with STARTING/RUNNING, so record `operatingPhase` separately from `alarmSeverity`; overlay severity on base phase when quality=GOOD. Always render icon/text/shape as well as color, meeting accessibility contrast. Limit motion, support reduced-motion preferences, avoid flashing alarms by default.
+
+**Sources:** virtual lab uses SIMULATED watermark globally and per-value; PHYSICAL only from authenticated, approved, time-valid `SignalBinding` via Edge ingestion; no manual browser ability to switch provenance to PHYSICAL. No direct browser-to-PLC connection and no PLC commands. Live status can be implemented only after OT-0/OT-3 acceptance; before then display a static `UNKNOWN_NO_TELEMETRY` HMI with clearly labelled simulated demo overlay if enabled.
+
+### 31.10 RS-K9 — Focus Inspector with live/historical trends
+
+**Interaction:** select equipment or its sensor symbol → right-side resizable Inspector (mobile: bottom sheet), with (a) equipment name/type/stable ID/line, (b) engineering properties and source evidence, (c) independent operating phase, alarm, freshness, source and last update, (d) signal cards: temperature °C, pressure bar, flow m³/h, speed RPM, energy kW etc **only if mapped and dimensionally compatible**, (e) graph with multiple series and thresholds, (f) Event/Alarm Timeline, (g) X-Ray upstream/downstream and affected shared resources, (h) revision/maintenance history.
+
+Charts: selectable 5m/1h/24h/7d; UTC evidence storage and site-local display; show source event time, ingest time, sampling interval, quality gaps, uncertain/bad points, timezone, approved sensor provenance, read-only setpoint/limit reference *only if trustworthy*. Do not interpolate or zero-fill missing values by default. For high cardinality use bounded queries, server-side downsampling preserving maxima/minima and alarm peaks; test gap and retention behavior. Overlay process phases (STARTING/RUNNING/etc.) as an independent band only when state source is trustworthy; never calculate them from single noisy temperature reading without separately approved classification.
+
+**Example:** focusing mixer `MX-101` highlights cement+aggregate+water inputs, displays current state badge with provenance, temperature trend and mixing phase timeline if sensors exist; disconnected equipment shows UNKNOWN and `No qualified telemetry binding`, not a false normal temperature.
+
+### 31.11 Extra candidate killer features (after first E2E)
+
+1. **Process Replay / Time Travel:** read-only synchronized replay of recorded PHYSICAL historian data and revisions, with exact site/binding validity and visible replay watermark; no simulation-to-live confusion.
+2. **Process Heatmap:** layer parameter overlays (temperature, throughput, energy) across graph, with unit-aware legend, no implicit normalization across incompatible dimensions.
+3. **Dependency Pulse:** on warning or downtime, X-Ray highlights *potentially* affected downstream lines and shared assets; distinguishes modeled dependency from proven physical causal fault.
+4. **Digital Equipment Passport:** a selectable node has version-pinned type, installed asset history, commissioning/maintenance evidence, linked sensors and change timeline, without fabricating data.
+5. **Split-Screen Compare:** side-by-side revision compare or current-vs-replay, identical viewport synchronization and visual semantic diff.
+6. **Scenario Sandbox:** engineer branches a DRAFT and evaluates impact/structural preflight without changing ACTIVE pointer, no production commands.
+
+**Priority:** RS-K7 SVG component registry belongs RS-0/RS-1; RS-K8 state overlays and RS-K9 Inspector UI may be scaffolded using UNKNOWN placeholder in RS-1, but PHYSICAL status/trend ingestion is strictly after OT qualification. Process Replay/heatmap are P2 until Historian exists.
+
+### 31.12 Acceptance additions for visual status and component generator
+
+| ID | Oracle |
+|---|---|
+| RS-016 | Every supported EquipmentType symbol exposes stable matching typed `Port` anchors and avoids dangling connections when collapsed |
+| RS-017 | SVG symbol registry denies script/external href and invalid generated geometry; no SVG markup stored as engineering authority |
+| RS-018 | Changing symbol theme/layout does not change Blueprint snapshot/hash, approval, source bindings |
+| RS-019 | Unknown or missing telemetry never renders INACTIVE, RUNNING, WARNING or ALARM as a *current* observation |
+| RS-020 | STARTING light green and RUNNING green differ by icon/text/motion, also accessible without color or animation |
+| RS-021 | Stale and OFFLINE override last-known RUNNING indicator, show last sample timestamp; no invented values |
+| RS-022 | WARNING/ALARM overlay retains separate operating phase, quality and authorized alarm source |
+| RS-023 | Focused equipment only shows mapped dimensionally compatible temperature/pressure/flow signals and provenance |
+| RS-024 | Timeline shows quality gaps and out-of-order timestamps without silent interpolation |
+| RS-025 | Graph keeps max/min/alarm peaks under downsampling and never joins another site's data |
+| RS-026 | SIMULATED replay is visibly marked and cannot become PHYSICAL by modifying an HTTP payload |
+| RS-027 | Nested group collapse/expand preserves equipment IDs, transfers, selected node and saved viewport |
