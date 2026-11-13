@@ -1840,3 +1840,70 @@ G-INT0-A: Java contracts, normalized quality, identity and serialization pass te
 Sequence: INT-0A/B immediately; INT-0C alongside R0.6 Studio; INT-1 Graph Analyzer during R0.6C/R1. INT-2 Tribuo only after trustworthy historian, labeled/defensible baseline and measured false-alert performance; INT-3 after production events and duration/energy data; INT-4 after service and failures; INT-5 after validated scheduling/resource constraints. No ML microservice, model training, real PLC write, automatic publish, fictitious real alarm, or mandatory security bypass in this scope.
 
 **Definition of Done:** INT-0 only when production Java contracts and tests exist, revisions and site-scoping work and disabled prediction is explicit. INT-1 only when explainable findings are linked to real Studio targets and real E2E/qualification passes. Until then all scenarios are PLANNED, not PASS.
+
+
+### 24.8 Independent specification review: corrections and binding decisions (2026-11-13)
+
+**Review verdict: CONDITIONAL APPROVAL FOR TEST DESIGN, NOT IMPLEMENTATION SIGN-OFF.** The first INT-0/INT-1 draft is useful, but the following contract ambiguities MUST be resolved in RED-test fixtures before any production implementation. This subsection is normative where it clarifies or supersedes §24.1–24.7. Earlier §20 remains the strategic horizon; §22.9 (NOT §23) is the actual Smart Focus specification. The earlier reference to “Focus §23” is an incorrect section pointer and MUST be read as §22.9. No claim of executable tests or source-level compatibility review is made by this document-only audit.
+
+#### 24.8.1 Identity and versioning
+
+- Separate **EquipmentInstanceRef** (design-time stable equipment ID within a Blueprint) from **InstalledAssetRef** (persistent site-level physical asset over maintenance/replacement). The first includes exact blueprintId+revision+processUnitId; the second is an independently provisioned UUID with installation interval and site assignment. Many successive Blueprint revisions may reference one installed asset; one design instance need not have any installation yet. No implicit 1:1 correspondence.
+- `PhysicalAssetRefV1` in §24.1 is a **view/lineage envelope**, not an independent identity or authoritative table. Its `installedAssetId` is nullable, and if present must resolve through a server-owned time-bound binding record. Historical findings never silently relink after equipment replacement or template upgrade. EquipmentType key/version describe catalog identity, not actual installed serial.
+- An equipment object moved between ProcessUnits retains ID only if server-owned migration explicitly preserves it and validates links; deletion/recreation receives a new ID. Pin all catalog versions on assessment and persist a fingerprint of the effective engineering input. Assessments never alter engineering revision, publication status or activation.
+- Current R0.5 has internal SiteMember permissions but not qualified HTTP identity/provisioning. No assumption that site authorization is complete merely because an internal lifecycle test passes.
+
+#### 24.8.2 Telemetry, quality and time
+
+- Fix `MeasurementSampleV1`: `value` is **optional** when MISSING, while GOOD/UNCERTAIN/BAD/STALE numeric observations (if present) must be finite. MISSING is not represented by numeric zero. Reject NaN/infinity on every present numeric value. Never infer source quality solely from a timestamp.
+- Keep two independent concepts: **sourceQuality** as received and **effectiveQuality** computed using freshness/clock policy at evaluation time. A STALE derived state must not overwrite the original source quality in immutable history; `asOf` is mandatory for deterministic evaluation. Treat future timestamps, excessive skew, duplicates, out-of-order arrival and source resets explicitly; do not silently reorder by ingestion timestamp.
+- Introduce explicit `MeasurementDefinition` / qualified `SignalBinding` (`signalKey`, dimension, canonical unit, supported conversions, precision, expected sampling period, configured maxAge, source identifier and provenance). An arbitrary equipment-attached string is not proof of physical measurement ownership. Unit registry can initially support a narrow reviewed list; no attempt to guess from human labels.
+- `SIMULATED`, `IMPORTED` and `PHYSICAL` source types remain distinct; `PHYSICAL` is permitted only with authenticated, qualified connector and site signal binding. Synthetic/virtual samples cannot be reclassified as real or used to claim production accuracy. Storage/historian remains R3 scope.
+
+#### 24.8.3 Assessment replay, IDs, and result semantics
+
+- Separate `assessmentRunId` (unique execution ID, may differ on replay) from `findingFingerprint` (stable hash of site + exact blueprint revision/content hash + ruleId/version + target + normalized evidence). `findingId` may identify a persisted occurrence and MUST NOT be assumed stable across executions. Test deterministic **semantic findings and fingerprints**, after excluding generated run IDs and wall-clock timestamps; do not demand byte-equivalence of full responses with new run IDs.
+- The `CRITICAL` severity of a static topology rule indicates **design-review priority**, not an OT alarm; UI must distinguish `DESIGN_FINDING`, `SIMULATED_DIAGNOSTIC` and `QUALIFIED_PHYSICAL_ALARM`. Only the last originates from the independently qualified alarm pipeline. Avoid conflating finding lifecycle `ACKNOWLEDGED` with physical alarm acknowledgement.
+- Define evaluation state `COMPLETE|PARTIAL|UNAVAILABLE`; on unresolved catalog version, incomplete physical port binding or missing capacity, return explicit evidence and PARTIAL, never silently output an empty green findings list. Distinguish `NOT_APPLICABLE`, `INSUFFICIENT_DESIGN_DATA` and a confirmed `NO_FINDINGS`.
+- Predictions have typed task kind (`ANOMALY_SCORE|REGRESSION|CLASSIFICATION|FORECAST|OPTIMIZATION` or extensible versioned registry); `SUCCESS` does not require calibrated probability. Provider SPI must explicitly support cancellation, bounded execution timeout and typed errors without throwing raw model exceptions to UI. Disabled provider is unconditional UNAVAILABLE.
+
+#### 24.8.4 Graph semantics and capacity
+
+- Graph adapters must retain **typed relationship kinds** (material flow, process dependency, resource demand and instrumentation) rather than flattening them into one directed edge. Directional traversals apply only to relationship types for which downstream has defined meaning. Resource consumers should be indexed by resource ID, not connected pairwise.
+- Existing BlueprintValidator/PublicationGate own hard validity. INT-1 only adds evidence and decision support and cannot override their verdict; cycles for qualified recirculation require separate process semantics, not a blanket “acyclic” requirement.
+- Throughput and bottleneck computation requires explicit input/output quantity dimensions, conversion/yield, operation time, duty cycle, parallel paths, buffers, recirculation and shared-resource schedule assumptions. The 12 t/h illustration is valid **only** for a homogeneous simple serial flow under stated assumptions; never apply “minimum nameplate rating” to heterogeneous systems. When evidence is inadequate, surface PARTIAL + INSUFFICIENT_DESIGN_DATA and no numeric throughput.
+- Distinguish catalog nameplate capacity, engineering upper bound, synthetic simulation result and verified measured value in API and UI. Capacity advice never becomes automatic design modification.
+
+#### 24.8.5 Security, storage and performance
+
+- INT-0 contracts need no DB schema; append-only assessment history/feature storage is an explicit later ADR. If a POST assessment endpoint exists, it must load the stored revision server-side, enforce actor membership and per-site resource limits, reject foreign references, cap graph size/runtime and avoid returning another site's existence.
+- At the UI boundary, separate FocusRecommendation from the actual Focus scheduler state, which is presentation-only. No automatic cursor movement during edit/modal/pin; no focus selection may modify a revision, issue PLC commands, or hide a qualified critical alarm.
+- Benchmark 10/50/99 units against fixed dataset SHA and seeded generators. Report graph vertices/edges, wall-clock p50/p95, allocations/peak heap, selected JDK/CPU and result correctness. A 10k-property input suite tests correctness, **not** a 10k PLC or load-test claim. A measured threshold is set only after baseline, and regressions must be tracked.
+
+### 24.9 Decision register, corrected acceptance gates and stop conditions
+
+| Decision | Resolution | Status |
+|---|---|---|
+| DEC-INT-01 | EquipmentInstance ID distinct from InstalledAsset ID; temporal binding and exact revision lineage | APPROVED FOR TEST DESIGN |
+| DEC-INT-02 | Missing sample nullable; source quality distinct from computed effective quality; explicit asOf | APPROVED FOR TEST DESIGN |
+| DEC-INT-03 | Finding fingerprint is deterministic; assessmentRunId is execution-unique | APPROVED FOR TEST DESIGN |
+| DEC-INT-04 | Static design CRITICAL never becomes physical PLC alarm | APPROVED FOR TEST DESIGN |
+| DEC-INT-05 | No numeric capacity without qualified dimensions/operations assumptions | APPROVED FOR TEST DESIGN |
+| DEC-INT-06 | INT-1 cannot override the existing structural validator or PublicationGate | APPROVED FOR TEST DESIGN |
+| DEC-INT-07 | No new ML runtime, historian, schema or external API until prerequisite gates | APPROVED FOR TEST DESIGN |
+| DEC-INT-08 | Need site-engineering review to qualify hydroponic recirculation and physical material balance | OPEN, blocks physical capacity qualification |
+| DEC-INT-09 | Source connector and signal ownership/authentication contract | OPEN, blocks real telemetry labels and INT-2 |
+| DEC-INT-10 | Performance acceptance numbers pending measured baseline | OPEN, blocks performance SLA claims, not contract tests |
+
+**Corrected test oracles (override earlier ambiguity):**
+- SC-INT0-004/005: MISSING with absent value is valid if explicitly qualified; present non-finite values rejected. Stale is effective quality at fixed asOf; original source quality retained. Future clock skew and duplicate samples deterministic.
+- SC-INT0-008: compare semantic findings + stable fingerprints and sorted evidence; runId and execution timestamps are separately checked for validity, not byte-equality.
+- SC-INT0-002: installedAsset binding resolution is time-bound and exact-revision; old findings do not change after new installation.
+- SC-INT1-001: hard validity strictly equals authoritative Validator decision; added INT findings cannot create contradictory publishability.
+- SC-INT1-004/005: serial bound is conditional on homogeneous normalized mass-flow assumptions; otherwise explicit PARTIAL/INSUFFICIENT_DESIGN_DATA.
+- SC-INT1-008: capture reproducible profiler evidence before assigning latency/memory pass/fail budgets.
+- SC-INT1-009: full browser E2E is gated on R0.6 studio/auth availability; backend INT-0 contract tests must not be blocked by missing frontend.
+
+**Recommended implementation order after test review:** (1) domain and mapping fixtures from existing Java types; (2) immutable contracts and normalization RED tests; (3) static assessment/fingerprint RED tests; (4) minimal GREEN without new DB or dependencies; (5) INT-1 graph tests using existing validated adapters; (6) React Focus integration after R0.6 bridge; (7) separate independent security and engineering review.
+
+**Hard stop:** no implementation approval if existing domain types, catalog pinned versions, actual site authorization behavior or JSON revision compatibility are not reconciled in code review. No production readiness claim from documentation or synthetic line tests.
