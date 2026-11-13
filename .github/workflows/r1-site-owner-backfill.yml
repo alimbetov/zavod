@@ -1,0 +1,39 @@
+name: r1-site-owner-backfill
+on:
+  pull_request:
+    paths:
+      - 'scripts/sql/r1-site-owner-*.sql'
+      - 'scripts/test-site-owner-backfill.sh'
+      - '.github/workflows/r1-site-owner-backfill.yml'
+jobs:
+  backfill:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16.6
+        env:
+          POSTGRES_DB: zavod
+          POSTGRES_USER: zavod
+          POSTGRES_PASSWORD: testpassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U zavod -d zavod"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: zavod
+      PGPASSWORD: testpassword
+      PGDATABASE: zavod
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+      - name: Verify read-only audit and fail-closed backfill in PostgreSQL
+        run: bash scripts/test-site-owner-backfill.sh
