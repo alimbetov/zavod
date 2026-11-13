@@ -39,9 +39,9 @@ export const studioApi={
   }):Promise<{viewId:string;layoutVersion:number;blueprintRevision:number}> =>
     request(scope(site,id)+'/layouts/'+encodeURIComponent(viewId),{
       method:'PUT',headers:{'X-Zavod-Dev-Write':'true'},body:JSON.stringify(body)}),
-  telemetry:(site:string,id:string,revision:number,unitId:string):Promise<TelemetrySignalView[]> =>
+  telemetry:(site:string,id:string,revision:number,unitId:string,minutes=60):Promise<TelemetrySignalView[]> =>
     request(scope(site,id)+'/revisions/'+revision+'/telemetry?unitId='+
-      encodeURIComponent(unitId)+'&minutes=60&limit=100'),
+      encodeURIComponent(unitId)+'&minutes='+minutes+'&limit=100'),
   xray:(site:string,id:string,unitId:string):Promise<XRayView> =>
     request(scope(site,id)+'/x-ray?unitId='+encodeURIComponent(unitId)),
 };
