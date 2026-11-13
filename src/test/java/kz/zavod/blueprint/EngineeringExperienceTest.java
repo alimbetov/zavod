@@ -73,4 +73,38 @@ class EngineeringExperienceTest {
         assertTrue(preview.lines().get(0).equipment().stream()
                 .allMatch(x->x.state().equals("UNKNOWN_NO_TELEMETRY")));
     }
+
+    @Test void concreteStarterBuildsThreeDependentLinesAndFailsClosedOnPartialActivation() {
+        UUID id=UUID.randomUUID();
+        var concrete=GuidedBlueprintBuilder.concreteStarter(id,2,10,"CP01",catalog);
+        assertEquals(Set.of("continuous.pump.v1","batch.concrete.v1"),
+                GuidedBlueprintBuilder.templates());
+        assertEquals(3,concrete.units().size());
+        assertEquals(2,concrete.transfers().size());
+        assertEquals(1,concrete.sharedAssets().size());
+        assertEquals(9,concrete.units().stream().mapToInt(x->x.equipment().size()).sum());
+        assertTrue(BlueprintReadiness.blockers(concrete,catalog).isEmpty(),
+                BlueprintReadiness.blockers(concrete,catalog).toString());
+        var all=Set.of("CP01-AGG","CP01-CEM","CP01-MIX");
+        assertTrue(BlueprintPublicationGate.preflight(concrete,all,3,catalog).isEmpty());
+        assertTrue(BlueprintPublicationGate.preflight(concrete,Set.of("CP01-MIX"),3,catalog)
+                .stream().anyMatch(x->x.code().equals("INACTIVE_TRANSFER_PEER")));
+        assertTrue(BlueprintPublicationGate.preflight(concrete,all,2,catalog)
+                .stream().anyMatch(x->x.code().equals("ACTIVE_LINE_QUOTA_EXCEEDED")));
+        assertFalse(EngineeringGoldenModel.inspect(concrete,catalog).physicallyQualified());
+        assertThrows(IllegalArgumentException.class,
+                ()->GuidedBlueprintBuilder.concreteStarter(id,2,10,"../../other-site",catalog));
+    }
+
+    @Test void missingConcreteInterlineTransferCannotBePublished() {
+        var initial=GuidedBlueprintBuilder.concreteStarter(UUID.randomUUID(),2,10,"CP02",catalog);
+        var missing=new ProcessBlueprint(initial.id(),initial.revision(),10,
+                initial.units(),initial.sharedAssets(),
+                List.of(initial.transfers().get(0)),initial.dependencies());
+        var blockers=BlueprintReadiness.blockers(missing,catalog);
+        // The missing external cement feed is a required mixer port, so
+        // publication must fail even when the remaining topology is valid.
+        assertTrue(blockers.stream().anyMatch(x->x.code().equals("MISSING_REQUIRED_PORT")),
+                blockers.toString());
+    }
 }
