@@ -14,6 +14,8 @@ CREATE TABLE business_transition (
  previous_set_id varchar(36),
  new_set_id varchar(36),
  reason varchar(1024),
+ reason_code varchar(48) NOT NULL,
+ correlation_id varchar(128) NOT NULL,
  command_key varchar(128),
  content_hash varchar(64) NOT NULL,
  previous_event_hash varchar(64) NOT NULL,
