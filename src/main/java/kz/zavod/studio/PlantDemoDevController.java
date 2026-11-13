@@ -131,11 +131,21 @@ public class PlantDemoDevController {
         var mixing=blueprint.units().stream().filter(x->x.id().endsWith("-MIX")).findFirst().orElseThrow();
         var equipment=mixing.equipment().stream().filter(x->x.id().equals("water-doser"))
                 .findFirst().orElseThrow(()->new IllegalArgumentException("DEMO_SENSOR_TARGET_MISSING"));
-        return registry.list(siteId,blueprintId,revision).stream()
-                .filter(x->x.signalKey().equals(SIGNAL_KEY) && x.unitId().equals(mixing.id()))
-                .findFirst().orElseGet(()->registry.registerSimulated(new SignalDefinition(UUID.randomUUID(),
-                        siteId,blueprintId,revision,mixing.id(),equipment.id(),
-                        SIGNAL_KEY,"bar",SourceKind.SIMULATED,Duration.ofMinutes(2))));
+        var existing=registry.list(siteId,blueprintId,revision).stream()
+                .filter(x->x.signalKey().equals(SIGNAL_KEY)&&x.unitId().equals(mixing.id()))
+                .toList();
+        // A signal name is not its identity. Never replay data onto an unrelated
+        // unit component, alternative unit code, or non-simulated source.
+        for(var signal:existing) {
+            if(!equipment.id().equals(signal.equipmentId())
+                    ||signal.sourceKind()!=SourceKind.SIMULATED
+                    ||!"bar".equals(signal.unitCode()))
+                throw new IllegalArgumentException("DEMO_SIGNAL_MAPPING_CONFLICT");
+        }
+        if(!existing.isEmpty())return existing.get(0);
+        return registry.registerSimulated(new SignalDefinition(UUID.randomUUID(),
+                siteId,blueprintId,revision,mixing.id(),equipment.id(),
+                SIGNAL_KEY,"bar",SourceKind.SIMULATED,Duration.ofMinutes(2)));
     }
     @PostMapping("/simulate")
     @ResponseStatus(HttpStatus.OK)
