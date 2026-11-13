@@ -8,6 +8,9 @@ import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Explicit offline full-ledger audit. Never invoked on command-replay hot paths.
@@ -25,10 +28,35 @@ public class BusinessLedgerAuditService {
     private final BusinessTransitionLedger ledger;
     private final BusinessTransitionRepository events;
     private final SiteRepository sites;
+    private final TransactionTemplate consistentSnapshot;
     public BusinessLedgerAuditService(BusinessTransitionLedger ledger,
                                       BusinessTransitionRepository events,
-                                      SiteRepository sites) {
+                                      SiteRepository sites,
+                                      PlatformTransactionManager txManager) {
         this.ledger=ledger;this.events=events;this.sites=sites;
+        this.consistentSnapshot=new TransactionTemplate(txManager);
+        this.consistentSnapshot.setReadOnly(true);
+        this.consistentSnapshot.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.consistentSnapshot.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+    }
+
+    private SiteResult inspectSite(String site,Anchor anchor) {
+        ledger.verifySite(site);
+        var tip=events.findTopBySiteIdOrderBySequenceNoDesc(site);
+        long seq=tip.map(BusinessTransitionEntity::sequenceNo).orElse(0L);
+        String hash=tip.map(BusinessTransitionEntity::eventHash).orElse("");
+        if(anchor!=null) {
+            if(seq<anchor.sequenceNo())throw new IllegalStateException("ANCHOR_HISTORY_TRUNCATED");
+            if(anchor.sequenceNo()>0) {
+                var pinned=events.findBySiteIdAndSequenceNo(site,anchor.sequenceNo())
+                        .orElseThrow(()->new IllegalStateException("ANCHOR_EVENT_MISSING"));
+                if(!pinned.eventHash().equals(anchor.eventHash()))
+                    throw new IllegalStateException("ANCHOR_HASH_MISMATCH");
+            } else if(!anchor.eventHash().isEmpty()) {
+                throw new IllegalStateException("ANCHOR_INVALID");
+            }
+        }
+        return new SiteResult(site,"PASS",seq,hash,null);
     }
 
     // Deliberately no encompassing transaction: a failed site verification must
@@ -45,23 +73,11 @@ public class BusinessLedgerAuditService {
         }
         for(String site:allSites) {
             try {
-                ledger.verifySite(site);
-                var tip=events.findTopBySiteIdOrderBySequenceNoDesc(site);
-                long seq=tip.map(BusinessTransitionEntity::sequenceNo).orElse(0L);
-                String hash=tip.map(BusinessTransitionEntity::eventHash).orElse("");
-                var anchor=trustedAnchors.get(site);
-                if(anchor!=null) {
-                    if(seq<anchor.sequenceNo())throw new IllegalStateException("ANCHOR_HISTORY_TRUNCATED");
-                    if(anchor.sequenceNo()>0) {
-                        var pinned=events.findBySiteIdAndSequenceNo(site,anchor.sequenceNo())
-                                .orElseThrow(()->new IllegalStateException("ANCHOR_EVENT_MISSING"));
-                        if(!pinned.eventHash().equals(anchor.eventHash()))
-                            throw new IllegalStateException("ANCHOR_HASH_MISMATCH");
-                    } else if(!anchor.eventHash().isEmpty()) {
-                        throw new IllegalStateException("ANCHOR_INVALID");
-                    }
-                }
-                results.add(new SiteResult(site,"PASS",seq,hash,null));
+                // Verify all rows and select their chain tip from the SAME MVCC
+                // snapshot. A concurrent writer must not be able to replace the
+                // verified tip with an unchecked, newly appended event.
+                results.add(consistentSnapshot.execute(tx->
+                        inspectSite(site,trustedAnchors.get(site))));
             } catch(RuntimeException error) {
                 // Do not leak SQL, credentials, or unbounded exception text to audit reports.
                 String code=error.getMessage();
