@@ -24,7 +24,7 @@
 - Проверка полного каталога и физического процесса для всех 99 синтетических линий; реальный line capacity / material balance.
 - 99 физических PLC, промышленная SCADA/MES, real hardware/OT FAT/SAT, HMI и управление реальным оборудованием.
 
-**Технологии:** Java 21 / Spring Boot / JPA / PostgreSQL; React + TypeScript + React Flow (следующий этап); бесплатный OSS (Apache-2.0 предпочтительно, MIT и другие совместимые permissive лицензии допустимы с уведомлениями). Vaadin Flow не используется. Liquibase/Flyway пока нет. `spring.jpa.hibernate.ddl-auto=update` только для DEV; в PROD `validate` и отдельная квалификация схемы.
+**Технологии:** Java 21 / Spring Boot / JPA / PostgreSQL; React + TypeScript + React Flow (после квалификации ядра); бесплатный OSS (Apache-2.0 предпочтительно, MIT и другие совместимые permissive лицензии допустимы с уведомлениями). Vaadin Flow не используется. Liquibase/Flyway пока нет. `spring.jpa.hibernate.ddl-auto=update` только для DEV; в PROD `validate` и отдельная квалификация схемы.
 
 ## Локальный Backend API R0.6A (только разработка)
 
@@ -51,6 +51,19 @@ curl -X POST http://127.0.0.1:8080/api/v1/sites/<siteId>/blueprints \
 ```
 
 Далее API поддерживает `PUT .../blueprints/{id}/draft` (`expectedRevision` и `snapshot`), `POST .../validate`, `GET .../impact?from=1&to=2`, отдельные `GET/PUT .../layouts/{viewId}`. Запросы изменения требуют `X-Zavod-Dev-Write: true`; внешний IP и недоверенный браузерный Origin запрещены. **Это локальная песочница, а не production-аутентификация.** В обычном профиле `denyAll`, API-контроллеры `dev-local` не создаются. Никаких PLC write-операций.
+
+## BCQ-1 — бизнес-ядро прежде новых модулей
+
+**Текущий приоритет:** доказательство целостности процессов, ревизий и переходов `Create → Validate → Save → Approve → Publish → Activate → Revise`, затем повторные испытания восстановления и только после них расширение React Studio / OT / ML.
+
+- Единый реестр 15 бизнес-процессов, 32 инвариантов `BR-001…032` и 25 сценариев `SC-BCQ-001…025`: [раздел 28 мастер-ТЗ](docs/ZAVOD-MASTER-SPEC.md).
+- RED→GREEN: проверка типов циклов MATERIAL/ITEM_FLOW/INSTRUMENT, измерительных capabilities, current-only resource contention, concurrent approval и запрет повторной активации.
+- Подтверждённый сквозной JPA/PostgreSQL business journey: 99 DRAFT lines / 10 selected; L037→L038 Impact; immutable ревизии; два последовательных ActivationSet с историческим pointer; отказ при ошибочной новой revision.
+- Recovery: уничтожение и повторное создание Spring ApplicationContext с одной PostgreSQL; полный 99-line DRAFT (853 equipment, 64 transfers, 14 dependencies) и активная утверждённая конфигурация читаются без потери связей.
+- Transactional integrity: PostgreSQL CHECK fault injection принудительно отклоняет финальный указатель активной конфигурации, а тест проверяет полный rollback вставки ActivationSet.
+- **Открыто:** настоящий restart процесса/JVM, резервное копирование и восстановление PostgreSQL, потеря связи с БД посреди транзакции, site-wide shared resource arbitration, внешний security review и четырёхглазное утверждение.
+
+Исполняемые проверки: `bash scripts/test-blueprint-core.sh` (JDK 21) и `mvn test` (доступный Docker для PostgreSQL Testcontainers). **Зелёный CI не эквивалентен промышленной сертификации.**
 
 ## Следующие этапы
 

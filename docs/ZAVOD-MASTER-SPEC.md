@@ -2494,7 +2494,7 @@ Secrets, certificates and remote maintenance access must follow the enterprise O
 | **BR-020** | Activate только после PUBLISHED, с проверкой ревизии/site membership | Lifecycle PostgreSQL PASS |
 | **BR-021** | Site переключает ровно один activeSetId; предыдущая запись остаётся immutable | JPA transaction tests PASS |
 | **BR-022** | Конкурентные Activate с одним previous pointer: 1 SUCCESS, 1 STALE | Lifecycle PostgreSQL PASS |
-| **BR-023** | Ошибка новой ревизии/activation сохраняет прежнее действующее состояние и history | BusinessJourney negative test PASS |
+| **BR-023** | Ошибка новой ревизии/activation сохраняет прежнее действующее состояние и history | BusinessJourney negative + PostgreSQL CHECK fault-injection rollback PASS |
 | **BR-024** | Повтор той же активной config не создаёт новый ActivationSet | BusinessJourney PASS: ALREADY_ACTIVE |
 | **BR-025** | INSTRUMENT feedback не является MATERIAL_CYCLE; ITEM_FLOW и MATERIAL cycles различаются | RED reproduced; domain fix + pure Java smoke PASS |
 | **BR-026** | Только каталожный sensor с MEASURE может быть source Measurement; signalKey не blank | RED audit; CatalogAudit + smoke PASS |
@@ -2552,6 +2552,7 @@ Secrets, certificates and remote maintenance access must follow the enterprise O
 | SC-BCQ-022 | Security | Один actor не может self-approve high-risk изменённый Blueprint, независимо от admin | **RED/PLANNED**, policy/role separation |
 | SC-BCQ-023 | Scale | 100/500/1 000 units: validation/Save/Impact SQL count, heap, latency | **RED/PLANNED**, performance baseline |
 | SC-BCQ-024 | Contracts | Property-based seeded graphs 10 000; media, IDs, version, forbidden cycles | 10 000 seeded graph cases PASS; mutation/shrinking OPEN |
+| SC-BCQ-025 | Fault | PostgreSQL отклоняет обновление Site.activeSetId после вставки нового ActivationSet; обе операции откатываются атомарно | `BlueprintBusinessJourneyPostgresTest.databaseRejectsFinalSitePointerAndActivationInsertRollsBackAtomically` PASS; потеря сети/процесса ещё OPEN |
 
 **Уточнение доказательств:** CI PASS относится лишь к фактически выполненным тестам на указанном commit SHA, не к будущему production execution, physical sensor или независимой OT FAT/SAT. Java process restart ≠ Spring context restart. Восстановление без полной остановки JVM не рекламировать как disaster recovery.
 
@@ -2588,10 +2589,12 @@ Secrets, certificates and remote maintenance access must follow the enterprise O
 
 ### 28.8 Gates и порядок следующих доработок
 
-- **BCQ-G0 — Process/Rule Review:** BP-001…015, BR-001…032 и SC-BCQ-001…024 имеют явные expected results; все открытые BR решения классифицированы как OPEN и не названы выполненными.
+- **BCQ-G0 — Process/Rule Review:** BP-001…015, BR-001…032 и SC-BCQ-001…025 имеют явные expected results; все открытые BR решения классифицированы как OPEN и не названы выполненными.
 - **BCQ-G1 — Pure Domain:** RED→GREEN для FlowKind loops, sensor qualification и target-only resource conflicts, seeded 10 000 graph regression.
 - **BCQ-G2 — Real PostgreSQL:** full Create→Validate→Save→Approve→Publish→Activate→Revise; role/ownership/invalid/revision concurrency/approval concurrency/activation concurrency PASS на одном commit.
-- **BCQ-G3 — Recovery:** Spring context restart (1 active qualifying line plus 99-line persisted laboratory graph) + full JVM restart + PostgreSQL backup/restore + crash-in-transaction fault test. Прохождение context-restart **не закрывает** full recovery.
+- **BCQ-G3 — Recovery:** Spring context restart (1 active qualifying line plus 99-line persisted laboratory graph), PostgreSQL CHECK fault-injection transactional rollback (PASS), затем full JVM restart, PostgreSQL backup/restore и connection-loss fault test (OPEN). Прохождение context-restart **не закрывает** full recovery.
 - **BCQ-G4 — Production decision:** independent engineering review, site RBAC and separation of duties, performance evidence, qualified read-only OT pilot; до тех пор статус **ENGINEERING FOUNDATION VERIFIED**, не `industrial production ready`.
+
+**Контроль фактического выполнения (2026-11-13):** PostgreSQL/JUnit 19 tests, 0 failures/errors; separate 13 independent Java business assertions, 47 Blueprint core, 30 hardening, 33 engineering property checks и 10 000 seeded scenarios. Дополнительно проверен rollback при ошибке конечной операции Site pointer. Протокол RED: GitHub Actions commit `8e1dc9d4` с ожидаемым падением `BR-025: instrumentation feedback is not a material cycle`; GREEN commits `ea8225c5`, `df6e98b8`, `785c529d`, `716cb2c8` с целевыми исправлениями и регрессией. **Это независимые тестовые оракулы и техническое ревью кода, а не подписанное внешним экспертом заключение.** Независимая инженерная квалификация и отдельный OT-аудит перед real plant остаются OPEN.
 
 **Следующий приоритет после BCQ-G2:** закрыть пробелы G3 и авторизацию Production R0.6A перед тем, как начинать новые крупные модули. Production Execution/Operational Integrity остаются двумя отдельными future design blocks, не смешиваются с текущей реактивной визуализацией и Smart Focus.
