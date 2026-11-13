@@ -18,20 +18,27 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ActivationCommandService {
     public record Receipt(String activationSetId,boolean replayed) {}
+    public enum OutcomeState { COMMITTED, NOT_OBSERVED_RETRY }
+    public record Observation(OutcomeState state,String activationSetId) {}
     private final SiteRepository sites;
     private final SiteMemberRepository members;
     private final ActivationCommandRepository commands;
     private final ActivationTransitionRepository transitions;
     private final BlueprintLifecycleService lifecycle;
     private final PlantActivationSetRepository sets;
+    private final BusinessTransitionLedger ledger;
+    private final BusinessTransitionRepository businessTransitions;
 
     public ActivationCommandService(SiteRepository sites,SiteMemberRepository members,
                                     ActivationCommandRepository commands,
                                     ActivationTransitionRepository transitions,
                                     BlueprintLifecycleService lifecycle,
-                                    PlantActivationSetRepository sets) {
+                                    PlantActivationSetRepository sets,
+                                    BusinessTransitionLedger ledger,
+                                    BusinessTransitionRepository businessTransitions) {
         this.sites=sites;this.members=members;this.commands=commands;
         this.transitions=transitions;this.lifecycle=lifecycle;this.sets=sets;
+        this.ledger=ledger;this.businessTransitions=businessTransitions;
     }
 
     @Transactional
@@ -56,7 +63,7 @@ public class ActivationCommandService {
             verifyCommittedReceipt(siteId,commandKey,existing);
             return new Receipt(existing.resultSetId(),true);
         }
-        String activated=lifecycle.activate(siteId,blueprintId,revision,expectedPreviousSetId);
+        String activated=lifecycle.activateWithCommand(siteId,blueprintId,revision,expectedPreviousSetId,commandKey);
         String id=existingId(siteId,commandKey);
         commands.saveAndFlush(new ActivationCommandEntity(id,siteId,commandKey,actor,payloadHash,activated));
         transitions.saveAndFlush(new ActivationTransitionEntity(UUID.randomUUID().toString(),id,
@@ -74,6 +81,23 @@ public class ActivationCommandService {
         verifyCommittedReceipt(siteId,commandKey,receipt);
         return new Receipt(receipt.resultSetId(),true);
     }
+    /**
+     * A missing receipt is NOT proof of rollback: an in-flight transaction may
+     * still commit. Caller may safely retry using the SAME key and payload.
+     * PostgreSQL connection failure propagates; never guess a negative outcome.
+     */
+    @Transactional(readOnly=true)
+    public Observation observe(String siteId,String commandKey) {
+        validateKey(commandKey);
+        String actor=authorize(siteId);
+        var found=commands.findBySiteIdAndCommandKey(siteId,commandKey);
+        if(found.isEmpty())return new Observation(OutcomeState.NOT_OBSERVED_RETRY,null);
+        var existing=found.orElseThrow();
+        if(!actor.equals(existing.actorId()))throw new SecurityException("SITE_ACCESS_DENIED");
+        verifyCommittedReceipt(siteId,commandKey,existing);
+        return new Observation(OutcomeState.COMMITTED,existing.resultSetId());
+    }
+
     /** Verify receipt, matching append-only audit and persisted activation target.
      * Never turn a partial/corrupted transaction into a successful reconciliation.
      */
@@ -82,6 +106,14 @@ public class ActivationCommandService {
                 .orElseThrow(()->new IllegalStateException("MISSING_ACTIVATION_AUDIT"));
         var selected=sets.findById(receipt.resultSetId())
                 .orElseThrow(()->new IllegalStateException("MISSING_ACTIVATION_SELECTION"));
+        ledger.verifySite(siteId);
+        var evidence=businessTransitions.findBySiteIdAndCommandKey(siteId,commandKey)
+                .orElseThrow(()->new IllegalStateException("MISSING_BUSINESS_TRANSITION"));
+        if(evidence.eventType()!=BusinessTransitionEntity.EventType.ACTIVATE
+                ||!receipt.resultSetId().equals(evidence.newSetId())
+                ||!receipt.actorId().equals(evidence.actorId())
+                ||!siteId.equals(evidence.siteId()))
+            throw new IllegalStateException("BUSINESS_TRANSITION_MISMATCH");
         if(!siteId.equals(receipt.siteId())
                 ||!siteId.equals(audit.siteId())
                 ||!siteId.equals(selected.siteId())
