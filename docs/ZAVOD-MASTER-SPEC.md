@@ -1488,3 +1488,44 @@ Deployment при offline площадке: Blueprint и local Edge продол
 ### 20.5 Definition of Done — будущий Intelligence release
 
 Сначала утверждённые наблюдения и жизненный цикл Blueprint; затем 1–2 статистических сценария с измеримой точностью и человеческой проверкой; потом ML (baseline vs heuristic comparisons, holdouts и drift); затем offline optimizer только с реальными constraints. Во всех результатах сохранять input provenance, model version, uncertainty, reviewer и сценарий. **До закрытия R0.5Q/P0 и R0.6 visual E2E все INT-001…INT-008 — PLANNED, а не DONE.**
+
+
+---
+
+## 21. R0.5L — Blueprint Approval, Publication & PlantActivationSet (implemented engineering slice)
+
+**Статус:** IMPLEMENTED + CI VERIFIED (engineering-only, **not** industrial commissioning). Не пересматривать INT-001…INT-008: Zavod Intelligence остаётся отложенным. Этот раздел фиксирует фактический переход от чистого `BlueprintPublicationGate.preflight` к сохраняемому серверному жизненному циклу.
+
+### 21.1 Границы реализации
+
+- В PostgreSQL: `SiteEntity(siteId, maxActiveLines, activeSetId, @Version)`, `SiteMember(siteId, actorId, Role)`, `BlueprintSite(blueprintId, siteId)`, `BlueprintApproval(blueprintId, revisionNo, selection, status, actor, timestamps)`, immutable `PlantActivationSet(previousActiveSetId, revisionNo, selectedProcessUnits, activatedBy, activatedAt)`.
+- Актор определяется **внутри сервера из Spring SecurityContext**, а не передаётся HTTP-параметром `actorId`; membership и role читаются из БД площадки. Роли: VIEWER, REVIEWER, PUBLISHER, ACTIVATOR, ADMIN (одна роль на пользователя в площадке в первом slice).
+- `Approve(site, blueprintRevision, selectedUnits)`: reviewer site role + exact site ownership + immutable revision from DB + server-owned maxActiveLines + `BlueprintPublicationGate.preflight`; при ошибке запись не создаётся.
+- `Publish`: только после Approval и только PUBLISHER/ADMIN, pessimistic row lock на approval, versioned state APPROVED→PUBLISHED, факт и актор сохраняются.
+- `Activate`: ACTIVATOR/ADMIN + blueprint ownership + PUBLISHED status + read-only повторная проверка избранной конфигурации + expectedPreviousSetId. PostgreSQL `SELECT FOR UPDATE` над Site и одна transaction: append-only ActivationSet + замена site.activeSetId. При stale pointer rollback сохраняет прежнюю активную конфигурацию.
+- `active(site)`: доступ разрешён только имеющему membership actor; исторический set остаётся неизменным и несёт ссылку на точную ревизию Blueprint.
+- **Физическое действие не выполняется.** ACTIVE означает лишь выбранную инженерную конфигурацию в Zavod. Никаких OPC UA write, PLC command, E-stop или движения насосов.
+- До появления полноценной аутентификации HTTP сервисы **не опубликованы в сети**: servlet filter `denyAll`, no default network users. Политика безопасности работает для server-internal methods и проверена тестами с authenticated principals.
+
+### 21.2 Исполненные тесты и доказательства
+
+| ID | Метод | Критерий | Статус |
+|---|---|---|---|
+| SC-LIFE-001 | `approvePublishActivateTenOfNinetyNineAndKeepImmutableSelection` | 99 DRAFT lines, 10 выбранных; role checks, APPROVE→PUBLISH→ACTIVATE, stale activation отказ, immutable snapshot | CI PASS |
+| SC-LIFE-002 | `invalidDraftCannotBeApprovedAndSiteBoundaryIsEnforced` | broken physical port, cross-site and unauthenticated actor rejected; old revision safe | CI PASS |
+| SC-LIFE-003 | `elevenActiveLinesAreRejectedWithoutTouchingPreviousActivation` | 11th active line denied; existing activation unaffected | CI PASS |
+| SC-LIFE-004 | `twoActivatorsWithSamePreviousPointerCannotBothActivate` | 2 concurrent activators, exactly 1 new ActivationSet; second gets typed `STALE_ACTIVATION_SET` | CI PASS |
+
+CI проверил также три предыдущих JPA/PostgreSQL теста Blueprint Revision CAS/JSON corruption, 47 core assertions, 30 hardening assertions, 10 000 deterministic graph seeds. **7 JUnit tests PASS**, 0 failures/errors; GitHub Actions `blueprint-r05`, `catalog-smoke`, `plant-scenario-lab` success на merge-обновлённом `main`. Технический baseline commit: `ca8aeedc5fcb43da5a1e2452b8821e99e3e7bc05` (после устранения condition-on-servlet bug).
+
+### 21.3 Незакрытые эксплуатационные вопросы
+
+- **Пользователи и bootstrap:** тесты напрямую создают Site/SiteMember/BlueprintSite в БД. Отсутствуют защищённый provisioning workflow и подключённый OIDC/enterprise SSO. Нельзя выдавать текущие внутренние методы за публичный готовый API.
+- **Author separation:** approval actor и publisher записываются; ещё требуется формализовать, может ли один человек создавать и утверждать собственные производственные схемы. Для OT high-risk — независимое review.
+- **Audit hardening:** immutable append-only snapshot/ActivationSet существуют, но нет защищённого от администрирования БД журнала audit events и обязательной бизнес-причины изменения.
+- **Idempotency:** `Activate` поддерживает expected-pointer compare, но нет durable idempotencyKey API для сетевых повторов и recovery после разрыва ответа.
+- **Inter-site/shared utilities:** текущий validation ограничен выбранной конфигурацией одного Site/Blueprint; cross-blueprint reservations and external PlantAsset contracts требуют отдельного stress/consistency review.
+- **Performance/DR:** не выполнен процессный restart/backup/restore тест, multiuser security penetration test, 500/1000-line benchmark или real physical process qualification. HikariCP=5 остаётся лабораторной настройкой, Hibernate update только DEV.
+- **Инженерные профили:** искусственные 99-line тесты могут содержать непроверенные типы; нельзя автоматически публиковать такие схемы. В lifecycle test используются реальные catalog-defined water tanks с корректной port schema.
+
+**Следующий продуктовый этап:** R0.6 React Blueprint Studio + virtual HMI (Save→Reopen, hydroponic CIRCUIT + factory LINE fixtures). Затем read-only SCADA/Telemetry с отдельным OT review. Intelligence INT-001…008 запускать лишь после получения измерений и фактических производственных событий.
