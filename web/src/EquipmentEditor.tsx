@@ -77,11 +77,10 @@ function EquipmentEditorInner({site,blueprint,unitId,catalog,onCommitted,onBack}
   const editorRevision=blueprint.revision;
   const rootRef=useRef({site,blueprintId:blueprint.id,unitId});
   const scope=site+'|'+blueprint.id+'|'+unitId;
-  const loadedRef=useRef('');
-  // Stop remote layout lookups from overwriting pending local edits.
+  // Read-only layout fetch must tolerate React StrictMode effect replay.
+  // Effect cleanup cancels the first request without suppressing the second.
   useEffect(()=>{
-    if(loadedRef.current===scope)return;
-    loadedRef.current=scope;setLoadedLayout(false);
+    setLoadedLayout(false);
     let active=true;
     const base:Snapshot={equipment:unit?.equipment??[],connections:unit?.connections??[],positions:{}};
     (async()=>{
