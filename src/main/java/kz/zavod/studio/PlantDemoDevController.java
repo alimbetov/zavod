@@ -143,9 +143,26 @@ public class PlantDemoDevController {
                 throw new IllegalArgumentException("DEMO_SIGNAL_MAPPING_CONFLICT");
         }
         if(!existing.isEmpty())return existing.get(0);
-        return registry.registerSimulated(new SignalDefinition(UUID.randomUUID(),
-                siteId,blueprintId,revision,mixing.id(),equipment.id(),
-                SIGNAL_KEY,"bar",SourceKind.SIMULATED,Duration.ofMinutes(2)));
+        try {
+            return registry.registerSimulated(new SignalDefinition(UUID.randomUUID(),
+                    siteId,blueprintId,revision,mixing.id(),equipment.id(),
+                    SIGNAL_KEY,"bar",SourceKind.SIMULATED,Duration.ofMinutes(2)));
+        } catch(org.springframework.dao.DataIntegrityViolationException race) {
+            // Concurrent simulations may both see "not yet registered".
+            // The DB uniqueness constraint serializes the logical mapping;
+            // recover from the committed winner AFTER the failed transaction.
+            var committed=registry.list(siteId,blueprintId,revision).stream()
+                    .filter(x->x.signalKey().equals(SIGNAL_KEY)&&x.unitId().equals(mixing.id()))
+                    .toList();
+            if(committed.size()==1) {
+                var winner=committed.get(0);
+                if(winner.equipmentId().equals(equipment.id())
+                        &&winner.sourceKind()==SourceKind.SIMULATED
+                        &&"bar".equals(winner.unitCode()))return winner;
+                throw new IllegalArgumentException("DEMO_SIGNAL_MAPPING_CONFLICT");
+            }
+            throw race;
+        }
     }
     @PostMapping("/simulate")
     @ResponseStatus(HttpStatus.OK)
