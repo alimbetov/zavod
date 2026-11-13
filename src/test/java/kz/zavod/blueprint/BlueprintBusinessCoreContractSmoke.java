@@ -100,6 +100,22 @@ public final class BlueprintBusinessCoreContractSmoke {
         require(impact.affectedUnits().equals(Set.of("A","B")),
                 "BR-024: target impact includes removed B and remaining compressor consumer A, excludes C: "+impact.affectedUnits());
     }
+    /** Changed resource membership must reach historical peers even when the unit ID survives. */
+    private static void removingResourceUseMustNotifyPreviousConsumers() {
+        UUID id=UUID.randomUUID();
+        var asset=new SharedAsset("compressor",10,AssetMode.SHARED_CAPACITY);
+        var oldA=unit("A",List.of(),List.of(),List.of(new ResourceUse("compressor",3)),List.of());
+        var b=unit("B",List.of(),List.of(),List.of(new ResourceUse("compressor",2)),List.of());
+        var c=unit("C",List.of(),List.of(),List.of(),List.of());
+        var before=new ProcessBlueprint(id,1,10,List.of(oldA,b,c),List.of(asset),List.of(),List.of());
+        var newA=unit("A",List.of(),List.of(),List.of(),List.of());
+        var after=new ProcessBlueprint(id,2,10,List.of(newA,b,c),List.of(asset),List.of(),List.of());
+        var impact=BlueprintImpactAnalyzer.analyzeChange(before,after);
+        require(impact.affectedUnits().equals(Set.of("A","B")),
+                "BCQ-033: removed membership must notify former resource consumer B: "+impact.affectedUnits());
+        require(impact.contention().isEmpty(),
+                "BCQ-033: conflict evaluation must use target state only");
+    }
     private static void selectedPreflightCannotHidePhysicalDependencies() {
         var a=unit("A",List.of(),List.of(),List.of(),List.of());
         var b=unit("B",List.of(),List.of(),List.of(),List.of());
@@ -115,6 +131,7 @@ public final class BlueprintBusinessCoreContractSmoke {
         measurementSourceMustBeQualified();
         impactReportsOnlyCurrentConflicts();
         selectedPreflightCannotHidePhysicalDependencies();
+        removingResourceUseMustNotifyPreviousConsumers();
         System.out.println("PASS "+assertions+" independent Blueprint business core assertions");
     }
 }
