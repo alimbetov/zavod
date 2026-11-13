@@ -2229,3 +2229,150 @@ The following RED cases are **APPROVED TO AUTHOR** because their input, oracle, 
 **Evidence chain:** `GAP-ID → SC-GAP-ID → код/тест → pinned fixture/version → точный commit SHA → CI run → reviewer/qualification notes`. Для GAP-003 и GAP-009 нужно также независимо проверенное инженерное/OT evidence, не только JUnit.
 
 **Основные stop conditions:** никакой PLC write, неподтверждённых physical limits, маскировки SIMULATED под MEASURED, silent unit coercion, преждевременного объявления SCADA production-ready; DEV Hibernate `ddl-auto=update` допускается только для локальной разработки, PROD `validate` плюс план миграции/backup. Не включать Liquibase/Flyway, ML-runtime и новые микросервисы без отдельного решения. **Единое мастер-ТЗ и только \`main\`.**
+
+ 
+---
+
+## 26. OT-0…OT-6 — Industrial Integration: Zavod Edge, PLC/SCADA read-only, Historian and Pilot
+
+**Статус: ТЗ / DESIGN APPROVED FOR SCENARIO REVIEW; NOT IMPLEMENTED.** Наличие этого раздела не означает подключения физического PLC, промышленной квалификации, готовности SCADA или права отправлять команды оборудованию. Нормативная спецификация находится только в этом мастер-ТЗ. В §20/§24 описаны будущие Intelligence/Data Contracts, в §22 — Blueprint Studio и Focus, в §23 — Engineering Properties, в §25 — продуктовые gates. Требования раздела 26 уточняют OT-путь, не заменяют существующую инженерную модель.
+
+### 26.1 Бизнес-цель, продуктовый результат и ограничения
+
+**Цель:** подключить одну квалифицированную физическую установку к Zavod в режиме наблюдения: паспортные характеристики и привязка Blueprint → реальные сигналы, качество связи, временные ряды, диагностика и HMI, без изменения работы штатного PLC/SCADA.
+
+**Первый реализуемый сценарий (OT Pilot P1):** инженер выбирает насос (либо другое согласованное некритичное оборудование), видит конкретный InstalledAsset, подтверждённые SignalBinding для температуры/давления/состояния, live value + измерительную единицу + source/effective quality + timestamps + источник, историю сигналов, stale/offline и диагностическое объяснение. Если связь разорвана, последнее значение остаётся историческим, но не маркируется как текущее. Кнопок управления PLC нет.
+
+**Вне первоначального scope:** PLC write, режим дистанционного управления, изменение safety setpoints, bypass interlocks, E-stop, SIL-функции, OPC UA Method calls на физическом объекте, автоматический publish/activate по ML-результату, промышленная сертификация, гарантии точности Digital Twin и обучение Tribuo на виртуальных данных как на реальных.
+
+### 26.2 Логическая архитектура, граница доверия
+
+Слои и направление потока данных:
+
+1. **OT source:** PLC/SCADA/OPC UA server, датчики, согласованные регистры/NodeId. Владелец конфигурации — предприятие. Первичный контроллер и аппаратные защиты функционируют независимо от Zavod.
+2. **Zavod Edge Agent:** локальный автономный Java 21 процесс на промышленном компьютере/VM. Pluggable read-only IndustrialConnector; квалифицированный OPC UA Client первым, Modbus TCP Adapter только после отдельного vendor-specific review. Сбор, локальная нормализация, проверка binding/config version, ограничение частоты опроса, bounded durable store-and-forward, health и аудит.
+3. **OT/IT boundary:** утверждённые сегменты сети и DMZ, firewall allowlists, минимальные разрешённые направления сетевых потоков, mTLS/проверка сертификатов, ротация/отзыв, отдельная identity для Edge, никакого произвольного ingress из cloud в PLC.
+4. **Platform ingestion:** серверный tenant/site/edge authorization, versioned MeasurementEnvelope, replay/idempotency, rejects/quarantine для несопоставленных сигналов, durable acknowledgement и audit.
+5. **Historian + Event Processing:** append-only raw evidence, качественно-нормализованные временные ряды, retention, cold data и read model для HMI; rules и alarm view отдельно от safety/PLC alarm systems.
+6. **Zavod Blueprint Studio / HMI:** только серверные авторизованные проекции наблюдений, exact site/asset/signal/revision lineage, реальный versus SIMULATED watermark; Focus является UI-рекомендацией, не механизмом промышленного действия.
+
+**Рекомендуемый initial stack:** Java 21 Edge, Eclipse Milo как кандидат для OPC UA; HTTPS batch ingestion как минимальный транспорт, MQTT over TLS через согласованный broker как опциональная альтернатива. PostgreSQL с партиционированием для пилота; отдельная TSDB/TimescaleDB только после измерения ingest/query/retention workload. Не требовать Kafka/Kubernetes/microservice mesh до доказанной необходимости. Версию библиотек фиксировать по отдельному dependency/security review.
+
+**Security baseline:** применимость и конкретные контроли согласовать с OT-инженером, ориентируясь на IEC 62443, NIST SP 800-82 и принятый на предприятии cyber/OT policy; ссылочные нормативы не означают соответствия или сертификации Zavod. Read-only не сводится к отсутствию вызываемого write-метода: нужны неподписывающие права на источнике, изолированные credentials, ограниченные разрешения, отрицательные тесты write/method и согласование у вендора.
+
+### 26.3 Ключевые модели данных и правила сопоставления
+
+| Контракт | Минимальный состав | Инвариант |
+|---|---|---|
+| InstalledAsset | installedAssetId (site-owned), asset class, installation/replacement interval, status, provenance | Не равен EquipmentType и не обязан иметь 1:1 связь с EquipmentInstance; замена не переписывает историю |
+| AssetInstallationBinding | siteId, equipmentInstanceId, blueprintId/revision range or explicitly qualified design lineage, installedAssetId, validFrom/validTo, bindingVersion | Binding temporal, never implicitly remap prior observations |
+| SignalDefinition | stable signalKey, physical dimension, canonical unit, precision/resolution, engineering range, expected sampling, freshness policy, sourceQuality mapping | Unknown unit/dimension is explicit rejection, not inferred from label |
+| SignalBinding | signalBindingId/version, siteId, installedAssetId, connectorId, source endpoint identity, OPC UA NodeId + namespace metadata or Modbus address, signalDefinitionId, effective interval, approval status | Only server-approved bindings can receive PHYSICAL provenance; source IDs are configuration, not user-editable Canvas labels |
+| EdgeIdentity / ConnectorConfig | edgeId/siteId, certificate credential reference, connectorType/version, permitted endpoint and read targets, polling limits, configVersion, approval and expiry | Connection and operational configuration versioned separately from Blueprint; secrets never saved in Blueprint or logs |
+| MeasurementEnvelope | eventId, edgeId, siteId, installedAssetId, bindingId/version, sourceTimeUtc, edgeReceivedAtUtc, serverIngestedAtUtc, sourceQuality, effectiveQuality(at asOf), optional finite value, source/canonical unit, PHYSICAL/SIMULATED/IMPORTED provenance, sequence/bootEpoch if available | Source quality retained; derived stale recomputed, MISSING may omit value; never zero-fill or rename virtual measurements physical |
+| IngestionReceipt | accepted/rejected event IDs or contiguous checkpoint, durable ack watermark, rejection reason with no secret leakage | Ack only after durable storage; duplicate resend is safe and may not create duplicate historical records |
+| EdgeHealthEvent | edgeId, connection state, last successful read, queue depth/age, disk pressure, clock skew, cert status, version | OFFLINE and stale visible to operator; health error cannot be misinterpreted as physical equipment alarm |
+
+**Key decisions:** Blueprint engineering revision is immutable and independent from Edge connector-config revision; layout-only changes MUST NOT rotate NodeId or signal keys. A physical instrument can map to multiple permitted observations, with explicit binding IDs and role/ownership checks. Deduplication key is scoped to site+edge+binding+event source identity or persisted sequence/boot epoch, not numeric value/timestamp alone. Clock policies must handle device time skew, clock resets, out-of-order packets and daylight-saving-independent UTC storage. Alias and unit normalization must preserve original evidence. Transport security does not substitute for site authorization.
+
+### 26.4 IndustrialConnector SPI (implementation target, not production code)
+
+Conceptual interfaces (actual Java signatures determined after domain and dependency review):
+
+- IndustrialConnector: connect(ReadOnlyConnectorConfig), capabilities(), read/subscribe(approved SignalBinding), health(), disconnect(); MUST expose **no write**, **no execute method**, **no setpoint API** in OT-0…OT-5.
+- ConnectorCapabilities: protocol, read modes, subscriptions/polling, timestamp and source-quality support, security modes, maximum safe request/monitored item limits.
+- SignalNormalizer: typed units, sourceQuality mapping, timestamp preservation; cannot invent GOOD readings, physics calibration, or verified measurement accuracy.
+- DurableOutbox/StoreAndForward: bounded disk spool, append, crash-safe checkpoint, backpressure and replay; protect against disk-full, corruption and poison packets.
+- IngestionClient: mTLS endpoint identity, batched envelope delivery, at-least-once transport with server-side idempotent persistence. **Exactly-once wire delivery is not assumed.**
+
+Every physical source permission is allowlisted. Changes to polling rate, binding, endpoint or cert need audit and approved configuration deployment. Connector must not starve PLC resources or bypass native SCADA.
+
+### 26.5 Phased delivery roadmap and entry/exit gates
+
+| Stage | Scope | Deliverables and exit gate | Prerequisites |
+|---|---|---|---|
+| OT-0 — Industrial Contracts | Asset identity, temporal SignalBinding, signal definitions/quality/unit policies; OT threat model; trust boundary/ADR | G-OT-0: reviewed DTO/schema, ownership/lineage and negative security contract tests PASS; no real connector | INT-0 identity + R0.6 domain alignment |
+| OT-1 — Virtual Edge Laboratory | Deterministic virtual OPC UA server, fake device quality/time, disconnect/reconnect, restart, replay, baseline golden line | G-OT-1: simulated signal → Edge → ingestion → virtual HMI E2E, fault-injection PASS; clear SIMULATED marker | OT-0; minimal secured ingestion/historian test environment |
+| OT-2 — Zavod Edge Gateway | Java runtime; OPC UA read-only connector; cert lifecycle; bounded durable buffer; reconnect/duplicates; audit/health | G-OT-2: after network outage and restart, queued samples reconcile with durable ack; no write/method calls, device load test | OT-1; safety security review for protocol |
+| OT-3 — Historian & Live HMI | Ingestion auth, append-only raw events, versioned normalization, retention, query and rules; Blueprint equipment overlay and signal trend | G-OT-3: exact asset binding, query isolation, stale/offline, alert provenance, sized performance/restore checks | R0.6 Studio, OT-2, DB operation policy |
+| OT-4 — Read-only Physical Pilot | One non-critical approved asset/site and agreed read signal allowlist; commissioning/SAT/rollback | G-OT-4: written site owner approval, OT security acceptance, measured PLC polling impact, signed SAT and removal plan | OT-0…3 gates and site/vendor permission |
+| OT-5 — Production Intelligence | Rules/statistics baseline; only qualified historical PHYSICAL data into trained analytics where justified | G-OT-5: time-aware validation, precision/recall/false alarm gates, operator feedback, rollback and drift plan | OT-4, INT-2 statistical baseline and qualified dataset |
+| OT-6 — Controlled Actions (optional new approval) | Separate command/control subsystem and formal hazard assessment, if commercial demand warrants it | NO implicit inclusion in current product scope. New ADR + safety case + independent OT/functional-safety assessment and validation plan before design | Explicit board/site authorization and verified safety architecture |
+
+Stages may overlap in engineering development, but **gates are sequential** for claims about live installation. CI GREEN and simulated replay are not industrial commissioning. Physical connection NEVER follows only from successful Java unit tests.
+
+### 26.6 Threat model, fault cases and resilience policy
+
+Model at least: compromised Edge identity, certificate expiry/revocation, unauthorized site mapping, poisoned OPC UA namespace/browse path, malicious/changed NodeId, incorrect Modbus address, edge-side access to unexpected write-capable functions, device overwhelm by polling/subscription rate, clock skew, data replay/duplicates, packet reordering, intermittent network, power loss during spool write, full/corrupt disk, schema drift, binding reassignment, physical replacement, concurrent config updates, simulator mislabelled as PHYSICAL, offline indicator suppression and excess data retention.
+
+Define OT-approved **request budgets** per PLC and integration channel (sample interval, outstanding requests, batch sizes and monitored items), separately from application throughput; no universal safe polling defaults. Edge queue has explicit finite capacity and preservation policy, and overload must result in clear gap/quality diagnostics rather than silent data loss. Recovery guarantees recorded as site-specific RPO/RTO; they cannot be presumed zero. Encrypt/seal sensitive configuration; never store certificate private keys or plaintext device credentials in telemetry.
+
+Secrets, certificates and remote maintenance access must follow the enterprise OT owner policy. Platform-to-OT flows are denied by default. No direct browser-to-PLC communication. Production deployment requires backup/restore test, rollback and incident response runbook.
+
+### 26.7 Test-first acceptance register (40 scenarios; PLANNED, not executed)
+
+| ID | Phase | Acceptance oracle |
+|---|---|---|
+| SC-OT-001 | OT-0 | InstalledAsset has independent site-scoped identity; EquipmentType and EquipmentInstance are not silently conflated |
+| SC-OT-002 | OT-0 | Replace equipment, preserve old observations and historical installation interval |
+| SC-OT-003 | OT-0 | Save/Reopen/layout-only change does not change physical SignalBinding or source address |
+| SC-OT-004 | OT-0 | Foreign-site asset, signal or edge configuration cannot be read/updated |
+| SC-OT-005 | OT-0 | Unapproved/expired binding cannot produce PHYSICAL accepted measurement |
+| SC-OT-006 | OT-0 | Qualified units preserve original value and convert only compatible dimension |
+| SC-OT-007 | OT-0 | MISSING value absent, BAD source retained, STALE computed at fixed asOf |
+| SC-OT-008 | OT-0 | Unsupported schema/unit/signal identity rejected with typed reason, no silent default |
+| SC-OT-009 | OT-0 | Clock skew, out-of-order timestamps and device reset preserve time provenance |
+| SC-OT-010 | OT-0 | Duplicate event ID/sequence is idempotent, different samples at equal value/time not conflated |
+| SC-OT-011 | OT-1 | Virtual OPC UA server emits reproducible measurements with SIMULATED provenance |
+| SC-OT-012 | OT-1 | Simulated disconnect/reconnect transitions CONNECTED/DEGRADED/OFFLINE correctly |
+| SC-OT-013 | OT-1 | Bad/missing/uncertain quality seen in HMI without fake normal reading |
+| SC-OT-014 | OT-1 | Restart Edge mid-batch does not silently lose durable queued events |
+| SC-OT-015 | OT-1 | Virtual stream cannot switch to PHYSICAL by client payload modification |
+| SC-OT-016 | OT-1 | Blueprint L037 receives only correctly bound virtual signals; other 98 units unaffected |
+| SC-OT-017 | OT-2 | Connector read-only SPI has no write/setpoint/method operation |
+| SC-OT-018 | OT-2 | Read-capable principal with forbidden write rights is enforced/tested on OT simulator |
+| SC-OT-019 | OT-2 | Unknown PLC endpoint/NodeId rejected by approved allowlist |
+| SC-OT-020 | OT-2 | Expired/revoked server/client trust chain fails closed with diagnosable health |
+| SC-OT-021 | OT-2 | Polling and monitored-item counts stay within approved device-specific budgets |
+| SC-OT-022 | OT-2 | Network loss queues events to finite durable spool; replay after recovery |
+| SC-OT-023 | OT-2 | Disk full/corrupted spool yields explicit loss/gap audit and bounded operation |
+| SC-OT-024 | OT-2 | At-least-once retry + server dedup produces one stored event per source identity |
+| SC-OT-025 | OT-2 | Invalid/poison event quarantined without permanently blocking valid later events |
+| SC-OT-026 | OT-2 | Remote config change requires authorization/version match/audit and cannot enable write |
+| SC-OT-027 | OT-3 | Source time, edge receipt and server ingest time remain separate and queryable |
+| SC-OT-028 | OT-3 | Historian query enforces site/asset/binding authorization and retention controls |
+| SC-OT-029 | OT-3 | Live HMI shows value, unit, source, effective quality and age; OFFLINE not current |
+| SC-OT-030 | OT-3 | Historic trend ties every sample to correct installation binding/version interval |
+| SC-OT-031 | OT-3 | Simulated diagnostic cannot be rendered as qualified physical alarm |
+| SC-OT-032 | OT-3 | Focus does not hide independent critical alarm or send PLC commands |
+| SC-OT-033 | OT-3 | Ingest/query/retention benchmark records p95/p99, CPU, heap, DB volume and correctness |
+| SC-OT-034 | OT-3 | Historian backup/restore and replay yield defined site RPO/RTO and gap evidence |
+| SC-OT-035 | OT-4 | Site owner approval, signed signal allowlist, risk assessment and SAT plan exist before device connection |
+| SC-OT-036 | OT-4 | PLC/SCADA continues normal independent operation under planned test load |
+| SC-OT-037 | OT-4 | Physical pilot disconnected/rolled back without control disruption or network access left open |
+| SC-OT-038 | OT-4 | Measured values compared with independent trusted plant source, clocks and units reconciled |
+| SC-OT-039 | OT-5 | Time-split and site-aware baseline evaluation tracks alert precision, recall, false alarms and drift |
+| SC-OT-040 | OT-6 | Any future command proposal is blocked until separate approved safety case and authorization gates |
+
+### 26.8 Required artifacts, decision register, scope gates
+
+**Documents and evidence:** ADR-OT-001 Trust Boundaries & Connectivity; ADR-OT-002 Edge Transport and Delivery Semantics; ADR-OT-003 Asset/Signal Binding Versioning; ADR-OT-004 Historian Data Model/Retention; ADR-OT-005 Read-only Protocol Restrictions; test harness and fixtures; device/vendor load limits; cyber review; SAT checklist, rollback and decommission plan. These are artifact requirements, **not claims that separate ADR files already exist**.
+
+| Decision ID | Decision | Status |
+|---|---|---|
+| DEC-OT-01 | Zavod Edge deployed inside approved OT zone, server does not directly poll PLC | PROPOSED |
+| DEC-OT-02 | OPC UA client read-only first; Modbus only by separate adapter approval | PROPOSED |
+| DEC-OT-03 | HTTPS batched delivery initial, MQTT/TLS optional after evaluated ADR | PROPOSED |
+| DEC-OT-04 | At-least-once transport, durable ack and idempotent historian | PROPOSED |
+| DEC-OT-05 | Blueprint Revision and ConnectorConfig/SignalBinding revisions independent | PROPOSED |
+| DEC-OT-06 | PostgreSQL historian pilot; select TSDB only after measured requirements | PROPOSED |
+| DEC-OT-07 | PLC write/method/setpoint not in OT-0…OT-5 | PROPOSED |
+| DEC-OT-08 | Physical pilot requires local owner, security and vendor-side signoff | PROPOSED |
+| DEC-OT-09 | Choose first supported PLC/OPC UA server, deployment OS and operator-approved network topology | OPEN |
+| DEC-OT-10 | Site data retention, storage sizing, privacy, backup and RPO/RTO targets | OPEN |
+| DEC-OT-11 | OPC UA sampling/notification limits and credential provisioning process per actual plant | OPEN |
+| DEC-OT-12 | Edge fleet management, upgrade/rollback and on-prem versus central deployment policy | OPEN |
+
+**Priority against current roadmap:** OT-0 specifications/contract tests may proceed alongside INT-0 and R0.6; OT-1 virtual laboratory only after a versioned secured signal bridge is available; OT-2/3 remain future product implementation. OT-4 is a separate commissioned activity and may not be marketed as production-ready from simulation alone.
+
+**Definition of Done of the documentation gate:** interface boundaries documented, no direct browser/cloud PLC access, 40 testable scenarios, stage prerequisites and stop rules, explicit open OT decisions and approval evidence checklist. **No implementation is claimed by adding this specification.**
