@@ -30,3 +30,14 @@ jobs:
         run: npm test
       - name: Typecheck and production build
         run: npm run build
+      - name: Install headless Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Browser role/layout/lens smoke
+        run: npm run test:e2e
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: react-studio-browser-evidence
+          path: web/test-results
+          retention-days: 7
