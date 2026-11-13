@@ -2165,3 +2165,19 @@ The following RED cases are **APPROVED TO AUTHOR** because their input, oracle, 
 - Не создавать второй «универсальный процесс» в TypeScript: frontend сохраняет server contract; любая разница отображается явной schema error, а не тихой конверсией.
 
 **Канонический статус на дату ТЗ:** Java/JPA Engineering Core и лабораторная генерация существуют; React Studio, Virtual HMI, Smart Focus runtime, OEM import, What-if physics, real historian, Predictive Maintenance и Production Optimizer — PLANNED. Этот раздел не является свидетельством реализации новых функций.
+
+
+### 24.11 Implementation slice 1 — verified resource arithmetic and semantic port diff (2026-11-13)
+
+**Baseline and scope:** Source commits `8ca2979` (JUnit regression tests), `cb5f5bc` (ResourcePolicyValidator), `181aa4c` (BlueprintImpactAnalyzer), `ba3b770` (BlueprintDiff). GitHub Actions `blueprint-r05` run [43384828935](https://github.com/alimbetov/zavod/actions/runs/43384828935) **SUCCESS** on exact head `ba3b770e2f78d22a8c6eb34b5b97e8df65f3db82`: Pure Java Blueprint verification and Maven/JPA/PostgreSQL regression complete. No new PLC connectivity, REST endpoints, schema migration or ML model.
+
+| Audit ID | Implementation | Verification | Gate |
+|---|---|---|---|
+| AUD-INT-C06 / RED-INT-06 | ResourcePolicyValidator.Conflict.totalDemand and BlueprintImpactAnalyzer.AssetContention.configuredDemand now `long`; demand merge uses checked `Math.addExact`. Existing snapshot `ResourceUse.demand` remains `int`, preserving persisted Blueprint JSON schema. | JUnit test near 2 * Integer.MAX_VALUE + existing tests; CI run above | GREEN (code + CI) |
+| AUD-INT-C05 / RED-INT-08 | BlueprintDiff sorts a copied equipment port list by stable port key for semantic comparison; original immutable stored snapshot and content SHA remain unchanged. | JUnit no-phantom-change/no-impact assertion + CI run above | GREEN (code + CI) |
+| RED evidence | Regression tests were committed before fixes; however there is **no separately verified CI failure on the intermediate RED SHA** in this report. | Do not claim independently observed RED phase solely from commit ordering | RED-execution evidence incomplete |
+| Physical and security qualification | No physical throughput or production authorization change | Not part of this slice | OPEN |
+
+**Compatibility note:** `int` → `long` in derived diagnostic record accessors is a Java source/binary API change for consumers; audit all usages before an external API is published. Snapshot records remain unchanged. A potential `long` overflow is checked and must become typed input validation in future API boundary; this is not a substitute for site resource quantity semantics.
+
+**Next slice (NOT DONE):** RED-INT-07 old/new shared-resource membership and precise reason trace; RED-INT-05 type-specific cycle semantics after DEC-INT-11; richer unit/port diagnostics; INT-0 asset/measurement contracts and site-owned API after R0.6 security boundary. Preserve HOLD for these requirements.
