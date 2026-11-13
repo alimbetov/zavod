@@ -1,6 +1,6 @@
 # ZAVOD INDUSTRIALOS — ЕДИНОЕ КАНОНИЧЕСКОЕ МАСТЕР-ТЗ
 
-**Версия документа:** 0.2 (Consolidated Draft)  
+**Версия документа:** 0.3 (Consolidated Draft; R0.5Q review)  
 **Дата baseline:** 13 ноября 2026  
 **Статус:** DRAFT / требуется техническое, OT-инженерное и продуктовое ревью; не свидетельствует о реализации функций или промышленной сертификации.  
 **Единственный нормативный файл требований:** `docs/ZAVOD-MASTER-SPEC.md`.  
@@ -1247,3 +1247,73 @@ spring.datasource.hikari.connection-timeout=30000
 | SC-BP-010 | Actual HMI, MES and PLC read-only projection tests | PLANNED; excluded from this PR |
 
 **CI gate:** Java 21 javac smoke, then Maven/JUnit/Testcontainers PostgreSQL on the exact PR HEAD. No success claim until CI completes. Real OEM/PLC connectivity, process physics, quantified buffers, nested units, production approval, security/RBAC and performance benchmarking are later workstreams. Never represent this laboratory as a certified SCADA or industrial safety controller.
+
+
+---
+
+## 19. R0.5Q — независимое техническое ревью и ТЗ усиления Zavod Blueprint
+
+**Дата ревью:** 13.11.2026. **Кодовая база:** PR #3 (52f36957), PR #4 (92bf6422); оба Draft. **Статус:** РЕЗУЛЬТАТ АУДИТА / ТЗ ДЛЯ РАЗРАБОТКИ, не реализованные функции нельзя отмечать PASS. Приоритет: подготовить полноценное инженерное ядро Physical Process OS, не создавать второе ТЗ. Технологии: Java 21 / Spring Boot MVC modular monolith / JPA / PostgreSQL / React + React Flow; Liquibase и Flyway до отдельного решения не использовать.
+
+### 19.1 Проверенные факты, ограничения доказательств
+
+- **R0.4:** 52 проверки, CI PASS (GitHub Actions 43365232455), графы на 1/10/50/99 синтетических линий, 99 уникальных топологических паттернов из трёх семейств.
+- **R0.5:** 47 проверок Java-кода и 1 JUnit/Testcontainers PostgreSQL integration test, CI PASS (GitHub Actions 43368291026). Save→Load→Edit→Impact→Save revision 2→Load old revision работает на одном процессе.
+- 99 ProcessUnits, 853 equipment, 64 Transfer, 14 Dependency и два SharedAsset сохраняются как один JSON snapshot. Эти результаты **не** доказывают реальную производительность, 99 PLC, физику гидропоники, multi-user concurrency, HMI/MES, корректность публикации, перезапуск JVM, отказоустойчивость или точность Impact относительно независимого oracle.
+- `BlueprintCoreSmoke` — один Java runner с 47 assertions, а не 47 независимых JUnit-тестов; `BlueprintPersistencePostgresTest` — один интеграционный метод. Тесты с условием `impact.size() <= n` и `catalogFindings.size() >= 0` заменить содержательными oracle.
+
+### 19.2 Audit Findings — проблемы сверх исходного перечня тестов
+
+| ID | Приоритет | Дефект / упущение | Требуемое исправление |
+|---|---|---|---|
+| AUD-001 | P0 | `BlueprintImpactAnalyzer` для одного SharedAsset создаёт peer-clique: k потребителей получают O(k²) соседств | Двудольный граф Unit→Asset→Units, каждый asset посещать однократно, индекс adjacency; проверить 1000 потребителей |
+| AUD-002 | P0 | Impact строится только от вручную переданных changed unit IDs; нет сравнения ревизий, причин и точного множества ID | `BlueprintDiff(before,after)`, типы изменений, `ImpactReport(affected,reasonPaths,conflicts)` и независимые golden oracles; UI/layout changes не распространять на физику |
+| AUD-003 | P0 | `findTop...` + `saveAndFlush` в JPA допускает race; `@Version` на append-only строке не охраняет head | Атомарный `BlueprintHead` CAS / row lock + уникальность ревизии + типизированный `RevisionConflict` и idempotency key |
+| AUD-004 | P0 | Валидатор проверяет только индивидуальный `ResourceUse.demand <= capacity` и exclusivity, но не разрешённую суммарную перегрузку SHARED_CAPACITY | `ResourcePolicyValidator` с capacity/units/time-window/allocations и списком всех потребителей, единый publication gate |
+| AUD-005 | P0 | `Boundary` может не быть связан с физическим EquipmentPort; внешние Transfer и внутренние connections не учитывают общую занятость порта | Явный контракт Boundary→PhysicalPort, проверка ownership, единого cardinality/capacity, удалённых и устаревших ссылок |
+| AUD-006 | P0 | `EquipmentCatalog` содержит одну current version на key; old blueprint при upgrade шаблона перестаёт соответствовать каталогу | Версионированный Registry по (typeKey,version), immutable templates, explicit migration, pin версии в ревизии |
+| AUD-007 | P0 | `maxActiveLines` находится в клиентском snapshot, валидатор считает все LINE, в том числе неактивные | Серверный `PlantPolicy`, отдельный `PlantActivationSet` и status; 99 DRAFT допустимы при лимите 10 ACTIVE |
+| AUD-008 | P0 | Нет реальной операции Publish/Approve/Activate, `BlueprintReadiness` лишь возвращает blockers | Server-enforced жизненный цикл DRAFT→IN_REVIEW→APPROVED→PUBLISHED, атомарная активация совместимых revisions |
+| AUD-009 | P0 | `BlueprintCatalogAudit` проверяет port key/direction/medium/cardinality, но не FlowKind (его нет в исходном шаблоне) | Версионированный `PortType`: direction, FlowKind, medium, unit, cardinality; запрет путать материал/изделия/utility/instrument |
+| AUD-010 | P0 | Тесты 99 линий частично содержат вымышленные типы оборудования и unbound Boundary | Доказать full catalog coverage на утверждаемых проектах, отсутствующие типы оставлять только в DRAFT |
+| AUD-011 | P1 | Изменение одной линии переписывает полный JSON 99 линий, нет независимого unit revision manifest | Определить manifest и stable unit revision refs; физическое дробление хранения вводить только по результатам benchmark |
+| AUD-012 | P1 | Нет Site/Tenant scope, RBAC и audit actor/reason | Серверные ownership/RBAC/deny-by-default до публичного write REST; site isolation |
+| AUD-013 | P1 | SHA-256 есть, но тестов corruption/schema migration/restore нет; hash не защищает от администратора БД | Typed failures, explicit schema-version migration, quarantine/recovery, SHA для accidental corruption, не security signature |
+| AUD-014 | P1 | Повторные ResourceUse(assetId) внутри одной линии не запрещаются, возможны ложные суммарные заявки | Unique structural references; duplicate detection и проверка физических идентификаторов |
+| AUD-015 | P1 | Virtual simulator имеет бесконечные buffers, токен может пройти несколько этапов за такт, нет времени/массы | Phased deterministic simulation, bounded buffers, units, process times, backpressure; не называть физическим Digital Twin |
+| AUD-016 | P1 | Не проверен рестарт JVM/БД и атомарность rollback; размеры входного Blueprint не ограничены | Restart/fault injection, limits на JSON/graph/threads, тайм-ауты, проверка recovery |
+| AUD-017 | P1 | Большинство тестов handcrafted и проверяют лишь наличие ошибки, а не полноту результата | JUnit parameterized, jqwik 10k seeds, mutation tests, точный golden oracle, code SHA и воспроизводимый seed |
+| AUD-018 | P1 | Нет профилирования JPA/SQL/CPU/heap и Hikari 5 при 99/500/1000 modules | Performance qualification на фиксированном стенде, p50/p95/p99, SQL, heap, GC, errors |
+| AUD-019 | P1 | Нет полного contract профиля/операций для LINE/CIRCUIT/STATION; class kind не доказывает поддержку гидропоники | Versioned ProcessProfile и обязательная разная golden fixture гидропоники, упаковки, бетонной линии |
+| AUD-020 | P2 | Нет React Blueprint Studio, HMI projection, MES, реальных read-only PLC | Отдельные R0.6+ с Playwright, virtual signal provenance и OT review |
+
+**Кодовые указатели:** `BlueprintImpactAnalyzer.java` строки 27–39, `BlueprintValidator.java` 15, 52–79, `BlueprintCatalogAudit.java` 17–36, `BlueprintDraftService.java` 30–36, `BlueprintPersistencePostgresTest.java` 37–69, `VirtualPlantSimulator.java` 20–46. Если код изменится — использовать новые ссылки на точный commit SHA.
+
+### 19.3 Минимальная целевая модель данных
+
+- `Site` и `Plant`: ownership, server-controlled `maxActiveLines` и полномочия.
+- `Blueprint`: стабильный UUID, siteId, versioned engineering scope, catalog lock.
+- `BlueprintRevision`: immutable snapshot + schemaVersion + hash + createdAt + actor + parentRevision; snapshot JSONB/TEXT допустим на MVP, решение о декомпозиции после benchmark.
+- `ProcessUnitRevision`: stable unitId, kind (LINE/CIRCUIT/ZONE/STATION), processProfile version, EquipmentInstances, typed Ports, internal graph, BoundaryPorts. Физическое хранение как отдельные unit revisions — целевая эволюция, не обязательные 99 отдельных JPA таблиц.
+- `InterUnitRevision`: Transfer по двум физически привязанным Boundary и отдельная ProcessDependency; нельзя использовать Transfer как бизнес-зависимость.
+- `PlantAssetRevision`: один physical assetId, capacity+unit, ownership; ResourceClaims с понятной временной семантикой, exclusive/shared policy.
+- `PlantActivationSet`: совместимые approved/published unit revisions и asset revisions, ровно до серверного лимита активных LINE; не путать с числом DRAFT.
+- `BlueprintChangeSet`: element-level diff; `ImpactReport`: impacted IDs + independently traceable paths/reasons, linked to specific before/after revisions.
+- `BlueprintHead`: currentRevision and rowVersion для атомарного CAS, `BlueprintRevisionEntity` append-only; unique (blueprintId,revisionNo).
+- Без преждевременного event sourcing, отдельной графовой БД, Kafka/Redis/Kubernetes и динамических PLC plugin system.
+
+### 19.4 Алгоритмы разработки
+
+**A. Diff → Impact:** сопоставить before/after по stable IDs (Equipment, Port, Boundary, ResourceClaim, Transfer, Dependency); сформировать типизированные изменения `EQUIPMENT_ADDED/REMOVED, PORT_CHANGED, CAPACITY_CHANGED, TRANSFER_CHANGED, PRESENTATION_ONLY`; учитывать только релевантные направления; индекс Unit→downstream и Asset→consumers; BFS с visited-assets (без O(k²) all-peer materialization); отсортировать affected IDs; возвращать reason path, не просто count; UNKNOWN и cross-site nodes отвергать.
+
+**B. Revision persistence:** клиент отправляет expectedRevision + idempotencyKey; в одной транзакции CAS обновить `BlueprintHead.currentRevision` и вставить immutable snapshot; ровно одна параллельная запись выигрывает, вторая получает `RevisionConflict` (HTTP 409 после введения API), а не raw SQL 500; unique index как last line of defense. Старый snapshot неизменен и читаем. Рестарт после commit не меняет ни content_hash, ни ссылки.
+
+**C. Publication gate:** SaveDraft допускает incomplete schema; Publish/Approve/Activate серверно проверяет Site/Auth → ownership → valid revision → catalog/profile versions → physical Boundary binding → transfer medium/flow/unit compatibility → resource policy → impact acknowledgement → approval → atomic activation. Один немодифицируемый approved snapshot; никаких PLC command API.
+
+**D. Эмуляция:** единственный Java deterministic simulator; сначала logical availability, затем quantity/time/bounded buffers с измеримыми единицами; гидропонная рециркуляция допускается только после process-specific qualification (аварии насоса, отсутствие потока, перелив, качество воды).
+
+### 19.5 Test-first и качество
+
+Новые acceptance contracts `SC-HARD-*` описаны ниже. До их исполнения статус **RED/PLANNED**, не PASS. Первоначальные 8 испытаний пользователя сохраняются. Следующие тесты покрывают найденные дополнительно дефекты и причинно-следственную точность.
+
+**No-overengineering rule:** каждая доработка должна улучшать конкретный проверяемый инвариант; запрещено вводить новые абстракции ради предполагаемой поддержки любой промышленности. Java/Spring modular monolith и PostgreSQL сохраняются. Dev `spring.jpa.hibernate.ddl-auto=update`, PROD `validate` с review schema/backup/rollback; Liquibase/Flyway не подключать без отдельного DEC.
