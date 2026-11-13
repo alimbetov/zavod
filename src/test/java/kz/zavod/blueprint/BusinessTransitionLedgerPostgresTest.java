@@ -241,6 +241,24 @@ class BusinessTransitionLedgerPostgresTest {
                 "a failed site must not roll back or suppress successful independent audits");
     }
 
+    @Test void missingPredecessorFailsClosedDuringReceiptReplayAndFullAudit() {
+        var f=setup();
+        actor("reviewer");lifecycle.approve(f.site(),f.blueprint(),1,Set.of("L1"));
+        actor("publisher");lifecycle.publish(f.site(),f.blueprint(),1);
+        actor("activator");
+        commands.activate(f.site(),"missing-link",f.blueprint(),1,null);
+        ledgerVerifier.verifyReceiptEvent(f.site(),"missing-link");
+        jdbc.update("delete from business_transition where site_id=? and sequence_no=2",f.site());
+        var mismatch=assertThrows(IllegalStateException.class,
+                ()->ledgerVerifier.verifyReceiptEvent(f.site(),"missing-link"));
+        assertEquals("BUSINESS_LEDGER_CHAIN_BROKEN",mismatch.getMessage());
+        assertThrows(IllegalStateException.class,
+                ()->commands.observe(f.site(),"missing-link"));
+        assertEquals("FAIL",fullAudit.auditAll(Map.of()).sites().stream()
+                .filter(x->x.siteId().equals(f.site())).findFirst().orElseThrow().status());
+        assertEquals(2,ledger.countBySiteId(f.site()));
+    }
+
     @Test void journalInsertFailureRollsBackApprovalAtomically() {
         var f=setup();
         actor("reviewer");
