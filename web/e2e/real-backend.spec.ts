@@ -52,7 +52,7 @@ test('three concrete lines: move SVG, save independent layout, reopen; add equip
   await page.getByRole('button',{name:'Повторить'}).click();
   await expect(page.locator('.editor-status')).toContainText('5 агрегатов');
   await page.getByRole('button',{name:'Сохранить схему и расположение'}).click();
-  await expect(page.getByText(/Blueprint R3.*Layout v2/)).toBeVisible();
+  await expect(page.locator('.editor-message').getByText(/Blueprint R3.*Layout v2/)).toBeVisible();
   await page.reload();
   await expect(page.getByText(/LOCAL · local-/)).toBeVisible();
   await expect(page.getByText('R3')).toBeVisible();
