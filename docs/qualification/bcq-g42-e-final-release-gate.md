@@ -16,7 +16,7 @@ claims. A green automated test suite is necessary, not sufficient, for productio
 | G4.2-A: idempotency, no false rollback, unresolved outcome | `ActivationCommandPostgresTest`; `observe()` distinguishes `COMMITTED` vs `NOT_OBSERVED_RETRY` | Automated functional qualification |
 | G4.2-B: atomic audit for five lifecycle transitions | `BusinessTransitionLedgerPostgresTest`; insertion-failure rollback; chain and revision hashes | Automated functional qualification |
 | G4.2-C: disconnect before and during COMMIT | Testcontainers `pg_terminate_backend`, deferred COMMIT trigger | Automated fault qualification; does NOT prove post-WAL ACK |
-| G4.2-E: COMMIT acknowledged by PostgreSQL but ACK blocked from client | `PostgresCommitAckLossProtocolTest`: real PostgreSQL 16.6, byte-level response proxy intercepts `CommandComplete('COMMIT')`, closes connection without forwarding, independent connection verifies durable state and duplicate-key replay | Requires exact HEAD CI PASS; proxy tests transaction receipt/audit/pointer *model* only |
+| G4.2-E: COMMIT response withheld from the real Spring client | `ActivationSpringCommitAckLossPostgresTest` (Hikari/JPA/ActivationCommandService), plus `PostgresCommitAckLossProtocolTest` (SQL model) | **PASS on exact tested SHA** in isolated PostgreSQL; production fault/recovery sign-off separate |
 | Cross-JVM crash and restore | `BcqRecoveryProcess` after JVM SIGKILL, fresh process and database restored from `pg_dump` | Automated recovery qualification |
 | PostgreSQL access/immutability | `scripts/test-bcq-g42-ledger-privileges.sh` applies migration to isolated DB, tests runtime least privilege + immutability trigger | Sandbox migration/security qualification |
 | PITR | `scripts/test-bcq-g42-pitr.sh`: physical base backup, archived WAL, restore point, later committed row excluded | Sandbox PITR qualification |
@@ -42,6 +42,25 @@ The test uses three representative transactional tables rather than the
 entire Spring lifecycle service; the full Spring service idempotency/atomicity
 is covered separately. End-to-end fault qualification through a PostgreSQL-aware
 proxy inserted in the actual Spring DataSource remains recommended for pilot sign-off.
+
+## 2.1 G4.2-E.1 — full Spring DataSource lost-ACK qualification
+
+**Verified implementation SHA:** `1a9aae6fb66a3ba708c484f875b1c41fc4d303b3`.
+
+**Real Spring service (not just simplified SQL):** `ActivationSpringCommitAckLossPostgresTest` provisions a fresh PostgreSQL 16.6 instance, wires Spring Boot/Hibernate/Hikari through a multi-connection local PostgreSQL protocol proxy, publishes a real server-authorized Blueprint, then arms one-shot COMMIT acknowledgement loss for `ActivationCommandService.activate()`. The proxy observes the server `CommandComplete('COMMIT')` packet and closes the client socket before forwarding it.
+
+The test asserts all of these:
+- Transactional Spring API invocation fails from the caller's perspective.
+- The proxy positively observed and dropped a PostgreSQL successful COMMIT response.
+- A second **direct, independent JDBC connection** verifies durable `activation_command` receipt, active `site` pointer, unique `activation_transition`, single `plant_activation_set` and `business_transition` ACTIVATE event.
+- The actual production `ActivationCommandService.observe()` reports `COMMITTED`, `reconcile()` returns the persisted activation ID and a repeat `activate()` with the same key returns `replayed=true`.
+- No second activation set, receipt or audit is created.
+
+**CI execution:** [Java/PostgreSQL verify — 72 tests, 0 errors](https://github.com/alimbetov/zavod/actions/runs/43446845427), [recovery/PITR/SQL controls](https://github.com/alimbetov/zavod/actions/runs/43446845420), [React](https://github.com/alimbetov/zavod/actions/runs/43446845357), [real backend E2E](https://github.com/alimbetov/zavod/actions/runs/43446845404), all passing for this SHA.
+
+This qualifies one deterministic full-service **lost ACK after successful PostgreSQL COMMIT response** path in isolated CI. It does **not** demonstrate durability against disk/controller power loss, alternate socket-loss timing, replication failover, catastrophic storage loss, or representative on-prem backup recovery objectives.
+
+**Decision: engineering fault-path evidence PASS; overall release gate HOLD** pending independent reviewer sign-off, verified deployment security identity and role grants, and representative RPO/RTO/OT separation.
 
 ## 3. RPO/RTO interpretation
 
