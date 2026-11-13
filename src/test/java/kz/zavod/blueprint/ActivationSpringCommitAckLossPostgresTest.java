@@ -161,7 +161,16 @@ class ActivationSpringCommitAckLossPostgresTest {
         assertEquals(1,receipts.countBySiteId(site));
         assertEquals(1,transitions.countBySiteId(site));
         assertEquals(1,sets.countBySiteId(site));
-        assertEquals(3,ledger.findBySiteIdOrderBySequenceNoAsc(site).size());
+        var evidence=ledger.findBySiteIdOrderBySequenceNoAsc(site);
+        assertEquals(3,evidence.size());
+        var activation=evidence.get(2);
+        assertEquals(BusinessTransitionEntity.EventType.ACTIVATE,activation.eventType());
+        assertEquals(key,activation.commandKey());
+        assertEquals(actualSetId,activation.newSetId());
+        assertEquals(64,activation.eventHash().length());
+        assertEquals(64,activation.contentHash().length());
+        assertFalse(activation.correlationId().isBlank());
+        assertEquals("ACTIVATE_TRANSITION",activation.reasonCode());
         assertEquals(actualSetId,sites.findById(site).orElseThrow().activeSetId());
     }
 
