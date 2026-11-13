@@ -13,7 +13,11 @@ SOURCE="zavod-g42-pitr-src-$$"
 RESTORE="zavod-g42-pitr-restore-$$"
 cleanup() {
   docker rm -f "$SOURCE" "$RESTORE" >/dev/null 2>&1 || true
-  rm -rf "$TMP"
+  # PostgreSQL data files are owned by the container's postgres UID.
+  # Clean them using a short-lived root container, not CI runner UID.
+  docker run --rm -v "$TMP:/cleanup" --entrypoint sh postgres:16.6 \
+    -c 'rm -rf /cleanup/restore /cleanup/archive' >/dev/null 2>&1 || true
+  rm -rf "$TMP" 2>/dev/null || true
 }
 trap cleanup EXIT
 mkdir -p "$TMP/archive" "$TMP/restore"
