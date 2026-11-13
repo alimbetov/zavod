@@ -172,6 +172,20 @@ class ActivationCommandPostgresTest {
         } finally {pool.shutdownNow();}
     }
 
+    @Test void corruptedAuditActorBlocksReconciliationAndReplay() {
+        var f=published();
+        var successful=commands.activate(f.site(),"tamper-receipt",f.blueprint(),1,null);
+        assertFalse(successful.replayed());
+        jdbc.update("update activation_transition set actor_id=? where site_id=?",
+                "forged-actor",f.site());
+        assertThrows(IllegalStateException.class,
+                ()->commands.reconcile(f.site(),"tamper-receipt"));
+        assertThrows(IllegalStateException.class,
+                ()->commands.activate(f.site(),"tamper-receipt",f.blueprint(),1,null));
+        assertEquals(1,sets.countBySiteId(f.site()));
+        assertEquals(1,receipts.countBySiteId(f.site()));
+    }
+
     @Test void nonCommittedOrUnauthorizedCommandNeverClaimsSuccess(){
         var f=published();
         assertThrows(BlueprintLifecycleException.class,()->commands.reconcile(f.site(),"missing"));
