@@ -46,3 +46,8 @@
 .telemetry-error{padding:8px;border-radius:6px;color:#ffcccd;background:#512d35}
 .telemetry-trace{min-width:0}.telemetry-trace svg{display:block;width:100%;height:auto;max-height:120px}
 .telemetry-time{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:10px}
+
+.telemetry-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:10px;color:var(--muted)}
+.telemetry-controls label{display:inline-flex;align-items:center;gap:4px}
+.telemetry-controls select{max-width:120px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:4px;padding:4px}
+.telemetry-controls input{accent-color:var(--accent)}
