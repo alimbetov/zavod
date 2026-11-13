@@ -35,8 +35,8 @@ function Trace({samples}: {samples:TelemetrySample[]}) {
   </div>;
 }
 
-export function TelemetryMonitor({site,blueprintId,revision,unitId}: {
-  site:string;blueprintId:string;revision:number;unitId:string
+export function TelemetryMonitor({site,blueprintId,revision,unitId,reloadToken=0}: {
+  site:string;blueprintId:string;revision:number;unitId:string;reloadToken?:number
 }) {
   const [signals,setSignals]=useState<TelemetrySignalView[]>([]);
   const [error,setError]=useState<string|null>(null);
@@ -65,7 +65,7 @@ export function TelemetryMonitor({site,blueprintId,revision,unitId}: {
       if(active){setSignals([]);setLastUpdated(null);setError(e instanceof Error?e.message:'Ошибка чтения телеметрии');}
     }).finally(()=>{if(active)setLoading(false);});
     return ()=>{active=false;};
-  },[site,blueprintId,revision,unitId,reload,minutes]);
+  },[site,blueprintId,revision,unitId,reload,reloadToken,minutes]);
   return <section className="telemetry-monitor" aria-label="Мониторинг телеметрии">
     <div className="telemetry-heading"><strong>Мониторинг · SIMULATED</strong>
       <button className="soft" disabled={loading} onClick={()=>setReload(n=>n+1)}>Обновить</button>
@@ -93,6 +93,13 @@ export function TelemetryMonitor({site,blueprintId,revision,unitId}: {
           <span className={'telemetry-quality status-'+latest.status.toLowerCase()}>{latest.status}</span>
         </div>
         <small className="muted">SIMULATED · {definition.unitCode} · Blueprint R{definition.blueprintRevision}</small>
+        {definition.sourceKind==='SIMULATED'&&definition.signalKey==='demo-pressure'
+         &&latest.status==='CURRENT'&&latest.value!==null&&Number(latest.value)>=5
+          &&<p className="demo-alarm" role="alert">УЧЕБНАЯ ТРЕВОГА · SIMULATED · давление ≥ 5 bar.
+            Не является промышленной сигнализацией.</p>}
+        {definition.sourceKind==='SIMULATED'&&definition.signalKey==='demo-pressure'
+         &&latest.status==='CURRENT'&&latest.value!==null&&Number(latest.value)<5
+          &&<p className="demo-nominal">SIMULATED · учебный показатель ниже порога тревоги</p>}
         <div className="telemetry-reading">{latest.status==='CURRENT'&&latest.value!==null?
           latest.value+' '+latest.unitCode:'Значение не подтверждено'}</div>
         {latest.observedAt&&<small className="muted">Время источника: {new Date(latest.observedAt).toLocaleString()}</small>}
