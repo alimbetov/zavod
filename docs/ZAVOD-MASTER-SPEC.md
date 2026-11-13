@@ -2700,3 +2700,37 @@ Secrets, certificates and remote maintenance access must follow the enterprise O
 5. **Review gate:** независимая проверка BR/FAT/test oracle и JaCoCo missed branches, потом production auth/security и только затем React Studio/Smart Focus.
 
 **Запрет преждевременной квалификации:** даже при выполнении G3-01…04 статус остаётся `ENGINEERING CORE QUALIFIED FOR LABORATORY WORK`, не `PRODUCTION-READY PHYSICAL PROCESS OS`. Новые модули не служат заменой завершению OI-G3-05…09.
+
+
+## 30. Product Focus Qualification — целевой уровень 95/100 (proposal, 2026-11-13)
+
+**Статус:** новая продуктовая программа; её показатели НЕ измерены и функциональность не считается реализованной. Никаких PLC write-команд или обещаний промышленной сертификации.
+
+### 30.1 Первый конкретный пользователь и вертикаль
+
+Целевой пользователь (ICP) — инженер-технолог или инженер АСУ ТП небольшой/средней площадки, который описывает существующий завод, согласует изменение конфигурации, обнаруживает несовместимости и безопасно возвращает прежнюю инженерную схему. **Первый эталон — бетонный завод (batch concrete)**, второй тест универсальности — насосная станция (continuous pump). Не запускать десятки отраслевых профилей одновременно.
+
+Единый пользовательский сценарий: создать площадку → две линии и общий ресурс → выбрать каталог и паспортные параметры → соединить типизированные порты → обнаружить ошибки материальных потоков и перегрузку ресурса → сохранить/переоткрыть → Diff/Impact → независимое Approve/Publish → Activate → Revoke/Restore → повторное открытие после сбоя. Реальный PLC не управляется.
+
+### 30.2 Product Focus Scorecard
+
+| Измерение | Вес | Требуемые доказательства |
+|---|---:|---|
+| Рабочий вертикальный E2E сценарий | 30 | Create→Design→Validate→Save→Reopen→Approve→Publish→Activate→Restore через UI/API, без ручного SQL |
+| Инженерный UX | 20 | Не менее пяти интервью и трёх наблюдаемых сессий; успешное завершение задач >=90%, зафиксированы ошибки и время |
+| Физическая достоверность | 20 | Подписанный профиль бетонного процесса, эталонные величины, негативные проверки/границы, независимый технолог |
+| Доверие к изменениям | 15 | 100% P0 BR/SC scenarios PASS, роли, four-eyes, idempotency, append-only audit, conflict/recovery, CI на HEAD |
+| Реальная пилотная ценность | 15 | Два независимых инженера и одна обезличенная реальная схема, подтверждено решение конкретной задачи |
+
+Правило допуска: **>=95 из 100**, в каждой категории >=80% доступного веса, все P0-gates закрыты. Процент является *целевым scorecard*, не оценкой текущей реализации, не физическим safety certificate. До замеров не приписывать баллы.
+
+### 30.3 Порядок поставки, без распыления ресурсов
+
+1. BCQ-G4: синхронизировать PR #5, выполнить точный CI и independent review; далее idempotency keys, unknown commit outcome, immutable transition audit, production identity, author != approver, migration/recovery.
+2. Concrete Golden Process: инженер утверждает физические ограничения, совместимость ports, flow/material balance, shared resources, version-pinned catalog and process rules.
+3. React Studio vertical slice: палитра, порты, свойства, понятные diagnostics, undo/redo, optimistic conflict UX, сохранение, preview diff/impact, approval history.
+4. Пилотные UX-сессии: измерить время, ошибки, completion rate и ценность; исправить блокирующие проблемы до добавления новых модулей.
+5. Continuous Pump portability: повторить пользовательский путь без бетонно-специфической логики в универсальном ядре.
+6. Затем — read-only Edge, HMI, MES. ML и облачная аналитика пока не должны вытеснять первый успешный сценарий.
+
+**Release verdicts должны различаться:** LAB ENGINEERING QUALIFIED; PILOT READY READ ONLY; OT SITE COMMISSIONED; PRODUCTION CONTROL QUALIFIED. Первая квалификация не означает последнюю.
