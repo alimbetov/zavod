@@ -9,19 +9,19 @@ import static kz.zavod.blueprint.domain.ProcessBlueprint.*;
  */
 public final class ResourcePolicyValidator {
     private ResourcePolicyValidator(){}
-    public record Conflict(String code,String assetId,int totalDemand,int capacity,Set<String> consumers) {
+    public record Conflict(String code,String assetId,long totalDemand,int capacity,Set<String> consumers) {
         public Conflict { consumers=Set.copyOf(consumers); }
     }
     public static List<Conflict> inspect(ProcessBlueprint b) {
-        Map<String,Integer> totals=new HashMap<>();
+        Map<String,Long> totals=new HashMap<>();
         Map<String,Set<String>> users=new HashMap<>();
         for(ProcessUnit u:b.units())for(ResourceUse r:u.resources()) {
-            totals.merge(r.sharedAssetId(),r.demand(),Integer::sum);
+            totals.merge(r.sharedAssetId(),(long)r.demand(),Math::addExact);
             users.computeIfAbsent(r.sharedAssetId(),k->new TreeSet<>()).add(u.id());
         }
         List<Conflict> findings=new ArrayList<>();
         for(SharedAsset asset:b.sharedAssets()) {
-            int total=totals.getOrDefault(asset.id(),0);
+            long total=totals.getOrDefault(asset.id(),0L);
             Set<String> peers=users.getOrDefault(asset.id(),Set.of());
             if(asset.mode()==AssetMode.EXCLUSIVE && peers.size()>1)
                 findings.add(new Conflict("EXCLUSIVE_RESOURCE_CONFLICT",asset.id(),total,asset.capacity(),peers));
