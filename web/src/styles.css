@@ -33,3 +33,16 @@
 .editor-error{padding:30px;background:var(--panel)}
 @media(max-width:1100px){.editor-body{grid-template-columns:165px minmax(320px,1fr)}.editor-detail{grid-column:1/-1;max-height:190px}.editor-canvas{min-height:440px}}
 @media(max-width:720px){.equipment-editor{min-height:640px;overflow:visible}.editor-body{display:flex;flex-direction:column}.editor-catalog{max-height:190px}.editor-canvas{height:460px;flex:none}.editor-detail{max-height:220px}}
+
+/* TF-03: read-only simulation monitoring with explicit provenance and errors. */
+.telemetry-monitor{display:flex;flex-direction:column;gap:10px;min-width:0}
+.telemetry-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.telemetry-heading strong{font-size:11px}
+.telemetry-heading button{padding:5px 8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:5px}
+.telemetry-card{min-width:0;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);display:flex;flex-direction:column;gap:8px}
+.telemetry-quality{font-size:9px;letter-spacing:.05em;border:1px solid var(--line);border-radius:4px;padding:4px 5px;font-weight:700}
+.status-current{color:#51d1b1}.status-stale{color:#f1bc69}.status-untrusted,.status-disconnected{color:#ef8b87}.status-no_data{color:var(--muted)}
+.telemetry-reading{font-size:15px;font-weight:700;overflow-wrap:anywhere}
+.telemetry-error{padding:8px;border-radius:6px;color:#ffcccd;background:#512d35}
+.telemetry-trace{min-width:0}.telemetry-trace svg{display:block;width:100%;height:auto;max-height:120px}
+.telemetry-time{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:10px}
