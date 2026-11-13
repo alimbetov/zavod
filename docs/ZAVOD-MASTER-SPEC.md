@@ -2700,3 +2700,176 @@ Secrets, certificates and remote maintenance access must follow the enterprise O
 5. **Review gate:** независимая проверка BR/FAT/test oracle и JaCoCo missed branches, потом production auth/security и только затем React Studio/Smart Focus.
 
 **Запрет преждевременной квалификации:** даже при выполнении G3-01…04 статус остаётся `ENGINEERING CORE QUALIFIED FOR LABORATORY WORK`, не `PRODUCTION-READY PHYSICAL PROCESS OS`. Новые модули не служат заменой завершению OI-G3-05…09.
+
+
+---
+
+## 30. Enterprise Adoption & Engineering Autopilot R1 — проект требований к корпоративному продукту
+
+**Версия раздела:** EA-R1.0 / DRAFT; **дата:** 13 ноября 2026; **статус:** предлагаемое дополнение к единому мастер-ТЗ, требует product + engineering + security + OT review. Это требования, не отчёт о готовой реализации. **Приоритет наследования:** правила раздела 0 и BCQ-G4 имеют преимущество перед маркетинговыми пожеланиями. Источник истины — этот файл; не создавать отдельное конкурирующее мастер-ТЗ.
+
+### 30.1. Цель, ICP и ценностное предложение
+
+**Позиционирование R1:** Zavod Engineering Studio / Engineering Autopilot — система инженерного проектирования, проверки, согласования и управления версиями технологических линий, дополняющая существующие PLC/SCADA. **Не является системой безопасного управления реальным оборудованием.** Отраслевой пилот — бетонный BATCH завод; вторичный профиль — насосный CONTINUOUS. Поддержка иных отраслей появляется только после отдельной квалификации их моделей.
+
+**Идеальный первый клиент (ICP):** проектно-инжиниринговые организации, системные интеграторы и небольшие/средние промышленные площадки с 1–10 активными линиями, которым нужно уменьшить ручную работу при проектировании, повторной проверке изменений и передаче инженерной конфигурации. Решение о покупке принимают главный инженер/технический директор совместно с ИТ/ИБ и эксплуатацией; технолог — ключевой эксперт качества.
+
+**Предлагаемое отличие:** «от проектного намерения до проверяемого, версионированного инженерного Blueprint + доказуемого изменения + read-only HMI Preview», а не «ещё одна SCADA». Отдельно демонстрировать, почему рекомендация получена, какая версия правил использована и где требуется человеческая верификация.
+
+**Критерии выбора (не реализованные обещания):**
+1. Технологическое решение можно повторить и проверить по исходным данным, версии каталога, параметрам и доказательствам.
+2. Изменения не теряют историю, автора, подпись/одобрение, затронутые линии и причины.
+3. Предприятие сохраняет данные локально и может экспортировать проект без привязки к облаку.
+4. Продукт не может случайно отдавать команды PLC или скрывать невалидное состояние под видом исправной линии.
+5. Пилот измеримо сокращает время инженерной работы и обнаруживает ошибки, а не просто генерирует картинку.
+
+### 30.2. Границы поставки и критические решения
+
+| ID | Приоритет | Требование / контракт | Проверка |
+|---|---|---|---|
+| EA-SCP-001 | P0 | R1 охватывает инженерную модель и согласования; PLC safety, E-stop, SIL, MES production commands исключены | Проверка поверхности API, net/OT security |
+| EA-SCP-002 | P0 | Один полный \`batch.concrete.v1\` бизнес-процесс для площадки; насосный профиль остаётся доступным | Browser E2E + инженерная приёмка |
+| EA-SCP-003 | P0 | 1–10 активных линий по site policy, не лимит хранения/тестового графа; дополнительные мощности — отдельная квалификация | Negative test для 11-й выбранной линии |
+| EA-SCP-004 | P0 | Спецификация проверяется по фактическим инвариантам; любые непокрытые ограничения и неподтверждённые физические свойства обозначаются \`NOT_QUALIFIED\` | Negative golden fixtures |
+| EA-SCP-005 | P0 | Коммерческое позиционирование не заявляет обязательное соответствие стандартам/сертификацию без подтверждающих документов | Release/legal review |
+
+### 30.3. Engineering Autopilot: от намерения до контролируемого проекта
+
+| ID | Приоритет | Функциональное требование | Критерий приёмки |
+|---|---|---|---|
+| EA-AUTO-001 | P0 | \`EngineeringIntent\`: отрасль, профиль и версия, производительность/единицы, перечень доступного оборудования, необходимые ресурсы, ограничивающие условия, обязательность подтверждающих данных | DTO/schema и негативные тесты единиц измерений |
+| EA-AUTO-002 | P0 | Детерминированный генератор \`batch.concrete.v1\` собирает типизированные устройства, устойчивые ID, порты, material/utility stream, зависимости и общие ресурсы из версионированного шаблона | Golden fixture повторяется из одного Intent без случайного изменения семантики |
+| EA-AUTO-003 | P0 | Инженер видит каждое предположение, недостающее свидетельство и неподтверждённый параметр; отсутствие исходных данных не заменяется придуманным «безопасным» числом | Test на missing throughput/recipe/device evidence |
+| EA-AUTO-004 | P0 | Созданный граф редактируем в React Studio: панель оборудования, typed connect, zoom/pan, undo/redo, multi-select, группировка, свойства, auto-layout, локализация RU/KZ/EN как целевая поставка | Playwright: все операции без ручного JSON |
+| EA-AUTO-005 | P0 | Save/close/reopen сохраняет отдельно Blueprint revision и Canvas layout; версия проекта и layout CAS; одновременные правки не теряются молча | PostgreSQL + browser concurrency |
+| EA-AUTO-006 | P1 | Генерация альтернатив (производительность, состав узлов, стоимость, эксплуатационные ограничения) с обоснованием и перечнем отсутствующих данных | Repeatable side-by-side compare; unsupported options marked |
+| EA-AUTO-007 | P1 | Экспорт инженерного отчёта и machine-readable схемы с provenance и версиями; импорт только после строгой проверки и preview/diff | Round-trip + corrupt-file rejection |
+| EA-AUTO-008 | P1 | AI-assistant может объяснять, предлагать структуру и исправления, но не становится источником инженерного разрешения или safety verdict | Disable AI does not disable deterministic validation |
+
+**Обязательный бетонный шаблон:** силос цемента, бункеры заполнителей, бак воды, бак добавки, соответствующие дозаторы/весы, транспорт, смеситель и разгрузка; каждый поток имеет направление, среду и кардинальность. Конкретные расчётные предельные значения нельзя задавать без утверждённого ProcessProfile и подтверждённых паспортных данных.
+
+### 30.4. Golden Model, объяснимая валидация и управление изменениями
+
+| ID | Приоритет | Требование | Проверка |
+|---|---|---|---|
+| EA-GOLD-001 | P0 | Версионированный \`GoldenProcessProfile\` для бетонного BATCH с обязательными операциями, портами, потоками, измерениями и зависимостями | Engineer-approved fixture + positive/negative |
+| EA-GOLD-002 | P0 | Квалификация каждого ProcessUnit/проверки: \`QUALIFIED\`, \`FAILED\`, \`NOT_APPLICABLE\`, \`EVIDENCE_REQUIRED\`; статус всего проекта агрегируется по fail-closed политике | Mixed-profile negative tests |
+| EA-GOLD-003 | P0 | Разделить structural, functional and physical validation: физическая мощность, материальный баланс и допустимые диапазоны не могут считаться подтверждёнными без формул, единиц и исходных данных | Missing evidence blocks physical pass |
+| EA-GOLD-004 | P0 | Публикация допускается только при прохождении установленных server-side gates; UI-индикаторы и Caffeine не являются authority | Bypass-UI tests на Backend |
+| EA-VAL-001 | P0 | Каждая blocking finding: code, severity, unitId, equipmentId/port, ruleVersion, фактическое и требуемое состояние, последствия, объяснение, remediation steps | Contract tests для 100% блокирующих правил пилотного профиля |
+| EA-VAL-002 | P1 | Safe Quick Fix предлагает diff и требует подтверждения пользователя; нет скрытой подмены инженерных свойств | Undo/redo + preview + rejection |
+| EA-CHG-001 | P0 | Semantic Diff и Impact по неизменяемым ревизиям: что изменено, какие линии/общие ресурсы затронуты, какие проверки/согласования повторить | Historical graph fixtures, resource removal |
+| EA-CHG-002 | P0 | Верное представление actor, UTC, reason, source/correlationId и хеша инженерной ревизии только из доверенного журналирования | Audit-to-diff reconciliation |
+| EA-CHG-003 | P0 | Approve → Publish → Revoke → Activate/Restore; история неизменяема, восстановление создаёт новый активационный набор; нельзя восстановить REVOKED target или отозвать текущий active | PostgreSQL negative + concurrency + recovery |
+| EA-CHG-004 | P1 | Сравнение двух вариантов до утверждения с целевым чек-листом повторной квалификации | Engineer UX acceptance |
+
+### 30.5. BCQ-G4: транзакционная и эксплуатационная целостность — блокирующий этап
+
+| ID | Приоритет | Требование | Приёмка |
+|---|---|---|---|
+| EA-OI-001 | P0 | Идемпотентность каждой внешней mutating business-команды: actor/site/operation/key + canonical requestHash, unique index и сохранённый результат | Повтор после потери ответа возвращает тот же результат |
+| EA-OI-002 | P0 | Тот же ключ с другим payload → стабильный conflict, идентичные конкурентные запросы не выполняются дважды | Two-thread and process-level Testcontainers |
+| EA-OI-003 | P0 | Transition Ledger append-only: operation, site, actor, blueprint/revision/hash, old/new pointers, reason, UTC, correlationId и outcome | Состояние и journal атомарны; journal failure rollback |
+| EA-OI-004 | P0 | Fault injection: TCP disconnect до write, после write до COMMIT, потеря подтверждения COMMIT, JVM crash во время запроса; \`UNKNOWN_OUTCOME\` разрешается reconciliation по ключу, а не повторным созданием записи | Fault matrix with deterministic verify |
+| EA-OI-005 | P0 | PostgreSQL recovery: isolated pg_dump/restore, миграции с \`ddl-auto=validate\`, восстановление цепочки approvals/revocations/activations, RPO/RTO репетиция | CI + documented site recovery drill |
+| EA-OI-006 | P0 | Производственный доступ по OIDC/SSO, доверенные роли/site scope, author ≠ independent reviewer для критичных изменений, ADMIN не bypasses four-eyes | Security + tenant penetration scenarios |
+| EA-OI-007 | P1 | Transactional Outbox для внешних уведомлений и событий с idempotent consumers; публикация не обязана зависеть от доступности брокера | Kill/replay/duplicate event tests |
+| EA-OI-008 | P0 | Любая потеря целостности хеша/связи active pointer → fail closed с диагностикой, без автоматического выбора якобы подходящего варианта | DB tamper + restoration negative cases |
+
+**Релизный запрет:** до доказательства EA-OI-001…006 нельзя открывать общедоступный production API согласования/активации. Текущие квалификации BCQ-G3 подтверждают только заявленные сценарии.
+
+### 30.6. Корпоративная пригодность (Enterprise Readiness)
+
+| ID | Приоритет | Требование | Приёмка |
+|---|---|---|---|
+| EA-ENT-001 | P0 | On-prem/частный контур, отсутствие обязательной зависимости от интернета для локального проектирования и просмотра ранее доступных проектов | Offline-site deployment smoke |
+| EA-ENT-002 | P0 | Изоляция площадок и организаций на уровне сервисов, DB-authority и API; на уровне организации — отдельно утверждённая модель доступа | Cross-site read/write denial |
+| EA-ENT-003 | P0 | OIDC SSO, RBAC и минимальные права, управляемое предоставление/отзыв доступа, секреты вне репозитория, TLS, журнал доступа | Threat model + integration tests |
+| EA-ENT-004 | P0 | Схема миграций версионирована, обратима где возможно, имеет backup/cutover/rollback plan; никаких \`ddl-auto=update\` в PROD | Clean deploy + populated DB upgrade |
+| EA-ENT-005 | P0 | Экспорт и переносимость Blueprint, версий каталога, схемы связей, событий истории, отчётов; отсутствие скрытой зависимости от облака | Export/import to isolated installation |
+| EA-ENT-006 | P0 | Health/metrics/structured logs, correlation IDs, алерты ошибок, счетчики сохранения/валидации/DB отказов, без утечки секретов | Failure observation tests |
+| EA-ENT-007 | P1 | Настраиваемые backup retention, data retention, audit export, удаление/архивация по утверждённой политике организации | Admin acceptance + recovery drill |
+| EA-ENT-008 | P1 | SBOM, vulnerability scan, dependency licenses, signed release artifacts, reproducible builds | Supply-chain CI gates |
+| EA-ENT-009 | P0 | Стабильный версионированный REST API, OpenAPI, DTO/Bean Validation, ProblemDetail, pagination/limits, rate limits, conditional writes, idempotency headers | Contract tests and negative HTTP tests |
+| EA-ENT-010 | P1 | Управляемая конфигурация SLO/обслуживания, инструкция инсталляции, обновлений и поддержки, журнал известных ограничений | Enterprise acceptance document |
+| EA-ENT-011 | P1 | Принцип локальной обработки данных; телеметрия и AI-вызовы наружу только по явной настройке и согласию администратора | Controlled outbound network test |
+| EA-ENT-012 | P1 | Локализация RU/KZ/EN, UTC в хранилище с locale-aware UI, единицы измерения и документация применимых стандартов | UI locale and unit conversion tests |
+
+**Нецели R1:** сертификация по ISO/IEC, IEC 61508/62443 или требованиям отрасли без независимой аттестации; hard-real-time PLC control; guaranteed AI prediction; MES manufacturing execution; ERP accounting; универсальный P&ID CAD.
+
+### 30.7. HMI Preview, Simulation & OT integration
+
+| ID | Приоритет | Требование | Приёмка |
+|---|---|---|---|
+| EA-HMI-001 | P0 | React read-only HMI Preview формируется только из опубликованной, неотозванной выбранной ревизии и версии каталога | Browser E2E, revoke negative |
+| EA-HMI-002 | P0 | Отсутствие сигналов отображается \`UNKNOWN/NO_TELEMETRY\`; не показывать fabricated RUNNING, HEALTHY или ALARM CLEAR | Snapshot assertions |
+| EA-HMI-003 | P1 | Simulation использует отдельный источник \`SIMULATED\`, seed и сценарии; невозможно перепутать с LIVE | UI and API source-tag tests |
+| EA-OT-001 | P1 после R1 | Edge connector OPC UA/Modbus TCP read-only, allowlist endpoints, proxy-free segmentation, TLS/mTLS где применимо, credentials vaulted | Separate OT threat model and read-only pilot |
+| EA-OT-002 | P0 | PLC/safety interlocks/E-stop/closed-loop control остаются за независимой технологической системой; нет writable tags в поставке R1 | Static integration surface scan |
+| EA-OT-003 | P1 после R1 | Signal quality, timestamp, stale TTL, disconnect/reconnect, local buffer и конфликты часов; отсутствие связи не изменяет инженерную активную конфигурацию | Network-loss OT lab |
+| EA-OT-004 | P1 после R1 | FAT/SAT отдельны от лабораторных тестов графа; первая площадка проходит инженерную приемку с владельцем процесса | Signed site-specific evidence |
+
+### 30.8. Производительность и SLO — цели для пилота, не объявленные свойства продукта
+
+- **Availability goal (engineering API, не PLC):** 99,5% в пилотном окружении при согласованном окне обслуживания; доступность индустриального процесса не зависит от Zavod.
+- **Interactive UI:** p95 локальных canvas-операций при репрезентативной схеме до 100 устройств < 100 мс на согласованном клиентском оборудовании; лабораторный ориентир, требует benchmark.
+- **GET Blueprint 10 линий:** p95 < 500 мс при пилотной инфраструктуре и проверенном уровне одновременности; явно фиксировать payload size и warm/cold.
+- **Save Draft 10 линий:** p95 < 1 с в пилотной БД без внешней сети, включая сохранение ревизии; только после профилирования.
+- **Базовая нагрузка:** отдельно квалифицировать 1, 10, 99 и 500 линий для внутреннего model stress; **это не поддерживаемый лимит активных производственных линий**.
+- **Recovery:** RPO и RTO назначаются совместно с первым заказчиком; не обещать нулевую потерю данных. Тест фиксирует измеренные величины.
+- **Cache:** Caffeine только immutable catalog/revision-safe deterministic computations. Ключи включают версию/хеш шаблона; memory budget, hit ratio, p95/GC, отсутствие правового/cross-site leakage. Кеш не участвует в определении ACTIVE, PUBLISHED, REVOKED, RBAC и IdempotencyKey.
+
+Метрики и цели считаются **планом тестирования**, а не договорным SLA до формального пилота и измерений.
+
+### 30.9. Сквозной сценарий бетонного завода — обязательный North Star E2E
+
+\`UC-EA-001 — Batch concrete engineering commissioning (no physical machine control)\`:
+
+1. Инженер входит через доверенную систему пользователей, выбирает Site и профиль \`batch.concrete.v1\`.
+2. Вводит единицы/плановую производительность, типы материалов, технологические ограничения и доступное оборудование.
+3. Guided Builder предлагает типизированный граф силос → весы → смеситель → разгрузка, включая отдельные вода/добавки, со списком предположений и evidence gaps.
+4. Пользователь визуально дорабатывает connection/port, свойства и геометрию, сохраняет Blueprint и Canvas, закрывает браузер и открывает тот же проект без потерь.
+5. Golden Model + Explainable Validation должны обнаружить намеренно внесённые ошибки среды, пропущенный вход смесителя, несовместимые единицы/ограничения; Quick Fix не изменяет проект без согласия.
+6. Вторая ревизия изменяет узел/ресурс; Impact/Change Risk Radar указывает точные затронутые линии и перечень повторной квалификации.
+7. Другой доверенный инженер утверждает и публикует ревизию. Business journal доказывает автора, хеш, причину и время; повтор HTTP-запроса с тем же idempotency key не создаёт новую операцию.
+8. Read-only HMI отображает опубликованные узлы с UNKNOWN для не подключённых датчиков. Нет write к PLC.
+9. Проводится контролируемая смена инженерной active selection, затем revoke старой неактивной публикации и Restore только неотозванной исторической версии через новую запись журнала.
+10. В другой JVM после принудительной остановки и в восстановленной PostgreSQL сверяются схемы, hashes, approval states, chain, reason и journal.
+
+**Обязательные RED-сценарии:** concurrency approve; save revision conflict; lost COMMIT acknowledgement; audit failure rollback; actor/role cross-site; published revoked HMI refused; missing industrial evidence; cache after site/cat change; disconnected process port; browser save/reopen; schema migration.
+
+**Acceptance artifacts:** неизменяемый commit SHA, CI job URL, browser screen recording/screenshots, JSON snapshot hash list, SQL state/journal reconciliation, инженерный чек-лист с владельцем процесса, журнал известных отказов и explicit NOT_QUALIFIED.
+
+### 30.10. Killer-feature гипотезы и эксперимент
+
+| Гипотеза | Целевая проблема | Когда строить | Метод подтверждения |
+|---|---|---|---|
+| KF-01 **Engineering Autopilot for concrete** | Долго создавать воспроизводимую технологическую схему и находить неполноту | R1 после BCQ-G4 | 3–5 инженеров; время до корректного проекта, количество ручных действий и доля завершений |
+| KF-02 **Change Risk Radar** | Изменения оборудования нарушают связанные линии и требуют повторных проверок | R1 рядом с Audit | Golden Impact vs expert oracle, снижение пропущенных затронутых объектов |
+| KF-03 **What-if Capacity Advisor** | Не видно bottleneck/последствий изменения мощности | R2 при наличии физически квалифицированных расчётов | Сравнение прогноза с проверенным инженерным расчетом, ошибка модели |
+| KF-04 **Diagram-to-Blueprint import** | Повторное ручное моделирование legacy схем | R2, после зрелости UX | Precision/recall распознавания и трудозатраты подтверждения |
+| KF-05 **Operator Training Preview** | Долго создавать обучающие материалы для оператора | R2 | Время подготовки сценария и успешно воспроизводимые симуляции |
+
+**Выбор для R1:** KF-01 + базовый KF-02. R2-гипотезы не мешают закрытию reliability. AI не допускается для автоматического определения физической безопасности, если нет утверждённого детерминированного rule oracle.
+
+**Предлагаемые цели пилота, не фактические KPI:** 100% обязательных E2E steps без ручного JSON; ≥50% сокращение времени сборки схемы относительно baseline; 100% обнаружения заранее согласованных критических ошибок; 100% корректности попыток повтора по Idempotency-Key; 100% непротиворечивых записей бизнес-журнала в тестовой матрице. Производственные KPI устанавливаются после baseline и согласования с первым клиентом.
+
+### 30.11. Release gates и очередность работ
+
+1. **EA-G0 / NOW:** техническое review PR #5 и #7, контракты и пересечение с \`main\`, воспроизведение конкурентного дефекта. CI pass не заменяет тест на реальный гонку. Без force push, без удаления веток до квалификации.
+2. **EA-G1 / BCQ-G4:** OI-001…008: idempotency, audit journal, PostgreSQL fault injection, recovery, negative security и fail-closed behavior; отдельный RED→GREEN и независимый Test Review. Issue #8.
+3. **EA-G2 / CONCRETE E2E:** реализация одного полного React Studio \`batch.concrete.v1\` сценария с Golden Model, Builder, Canvas, объяснениями и HMI Preview. Issue #9.
+4. **EA-G3 / HARDEN:** production SSO, миграции, бэкапы, observability, экспорт/импорт, SBOM; security review, readiness report, documented risk acceptance.
+5. **EA-G4 / PILOT:** небольшой инженерный пилот с валидированным baseline, user task completion, measured time saved, accurate errors and reproducible process. Только после этого коммерческий release gate.
+6. **EA-G5 / EXPAND:** optional read-only OT edge, What-if Advisor, integration with incumbent SCADA and future MES without expanding R1 safety claims.
+
+**Definition of Done для каждой P0 функции:** (a) принят нормативный контракт + бизнес-инвариант; (b) утверждены positive, negative, concurrency, security, crash/recovery scenarios; (c) RED подтвержден на коде до изменения, GREEN и полная регрессия на точном SHA; (d) независимое ревью; (e) доказательства в PR/issue; (f) документирован rollback и эксплуатационные ограничения. Реализация без соответствующих доказательств получает статус \`IMPLEMENTED_NOT_QUALIFIED\`, а не \`PASS\`.
+
+### 30.12. Предлагаемая упаковка, коммерческая пригодность и выбор клиента
+
+- **Community / Evaluation:** локальное проектирование, ограниченный демонстрационный профиль и экспорт собственных данных; отсутствие принудительного облачного входа. Финальная лицензия собственного кода зависит от \`DEC-16\`.
+- **Engineering Team (кандидат):** совместная инженерная работа, версионирование, Golden Model, Change Risk Radar, отчёты и поддержка. Определить лицензирование по site / числу инженеров после интервью, не фиксировать цены без рынка.
+- **Enterprise (кандидат):** on-prem, SSO, управляемые роли, аудит, backup/restore, SLA поддержки, integration services и security package. Нельзя брать плату за функции, чья эксплуатационная готовность не подтверждена.
+- **Внедрение:** reproducible installer, upgrade guide, демонстрационный проект бетонного завода, пример данных, security questionnaire, эксплуатационные runbooks, проверенные import/export и прозрачные границы ответственности.
+
+**Покупательский decision scorecard:** точность инженеринга 30%, целостность/аудит 25%, простота проектирования 20%, on-prem/интеграция 15%, стоимость владения и поддержка 10% — предложенные веса, требуют валидации на интервью. «95/100» допустимо как целевой индекс продуктового соответствия конкретному ICP после внешней оценки, но не как готовая текущая оценка.
