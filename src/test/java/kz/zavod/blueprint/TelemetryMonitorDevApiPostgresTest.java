@@ -76,6 +76,17 @@ class TelemetryMonitorDevApiPostgresTest {
                 .andExpect(jsonPath("$[0].definition.equipmentId").value("pump"))
                 .andExpect(jsonPath("$[0].latest.status").value("CURRENT"))
                 .andExpect(jsonPath("$[0].history[0].sourceEventId").value("evt-1"));
+        // Clock-skew-budget future observation must suppress the previous GOOD
+        // at the HTTP boundary, not only when invoking the pure evaluator.
+        var future=new TelemetryIngestionService.Incoming("evt-clock-ahead",new BigDecimal("6.2"),
+                "bar",Instant.now().plusSeconds(10),Quality.GOOD);
+        mvc.perform(post(base+"/signals/"+binding.id()+"/samples")
+                .header("X-Zavod-Dev-Write","true").contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(future))).andExpect(status().isOk());
+        mvc.perform(get(base+"?unitId=L1&minutes=60&limit=10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].latest.status").value("UNTRUSTED"))
+                .andExpect(jsonPath("$[0].latest.value").value(org.hamcrest.Matchers.nullValue()));
         mvc.perform(get(base+"?unitId=L2"))
                 .andExpect(status().isOk()).andExpect(content().json("[]"));
         mvc.perform(get(base+"?limit=501")).andExpect(status().isUnprocessableEntity());
