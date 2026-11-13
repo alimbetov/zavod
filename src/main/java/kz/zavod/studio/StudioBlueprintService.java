@@ -45,10 +45,7 @@ public class StudioBlueprintService {
     @Transactional
     public ProcessBlueprint saveDraft(String siteId,UUID id,long expectedRevision,ProcessBlueprint input) {
         var site=requireOwner(siteId,id);
-        projects.findById(id.toString()).ifPresent(project->{
-            if(project.status()==EngineeringProjectEntity.Status.ARCHIVED)
-                throw new StudioConflictException("PROJECT_ARCHIVED");
-        });
+        requireWritable(siteId,id);
         Objects.requireNonNull(input,"snapshot");
         if(!id.equals(input.id()))throw new IllegalArgumentException("BLUEPRINT_ID_MISMATCH");
         StudioInputLimits.check(input);
@@ -57,6 +54,14 @@ public class StudioBlueprintService {
                 input.sharedAssets(),input.transfers(),input.dependencies());
         drafts.saveDraft(canonical,expectedRevision);
         return canonical;
+    }
+
+    public void requireWritable(String siteId,UUID id) {
+        requireOwner(siteId,id);
+        projects.findById(id.toString()).ifPresent(project->{
+            if(project.status()==EngineeringProjectEntity.Status.ARCHIVED)
+                throw new StudioConflictException("PROJECT_ARCHIVED");
+        });
     }
 
     public SiteEntity requireOwner(String siteId,UUID id){
