@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useMemo,useState} from 'react';
-import ReactFlow,{Background,Controls,Handle,MiniMap,Position,ReactFlowProvider,
+import {ReactFlow,Background,Controls,Handle,MiniMap,Position,ReactFlowProvider,
   type NodeProps,type Node, type Edge} from '@xyflow/react';
 import {studioApi,ApiFailure} from './api';
 import {EquipmentSymbol} from './Symbols';
