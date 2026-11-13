@@ -154,6 +154,46 @@ class ActivationCommandPostgresTest {
         assertNull(sites.findById(f.site()).orElseThrow().activeSetId());
     }
 
+    @Test void observeWhileTransactionIsInFlightNeverClaimsRollback() throws Exception {
+        var f=published();
+        var pool=Executors.newSingleThreadExecutor();
+        var recorded=new CountDownLatch(1);
+        var release=new CountDownLatch(1);
+        try {
+            Future<String> task=pool.submit(()->{
+                actor("activator");
+                try {
+                    var tx=new TransactionTemplate(transactionManager);
+                    return tx.execute(status->{
+                        String id=commands.activate(f.site(),"pending-commit",f.blueprint(),1,null)
+                                .activationSetId();
+                        recorded.countDown(); // not committed yet
+                        try {
+                            if(!release.await(20,TimeUnit.SECONDS))
+                                throw new IllegalStateException("TEST_GATE_TIMEOUT");
+                        } catch(InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException("TEST_INTERRUPTED",e);
+                        }
+                        return id;
+                    });
+                } finally {SecurityContextHolder.clearContext();}
+            });
+            assertTrue(recorded.await(15,TimeUnit.SECONDS));
+            var pending=commands.observe(f.site(),"pending-commit");
+            assertEquals(ActivationCommandService.OutcomeState.NOT_OBSERVED_RETRY,pending.state());
+            assertNull(pending.activationSetId());
+            release.countDown();
+            String id=task.get(25,TimeUnit.SECONDS);
+            assertEquals(id,commands.observe(f.site(),"pending-commit").activationSetId());
+            assertEquals(1,receipts.countBySiteId(f.site()));
+            assertEquals(1,sets.countBySiteId(f.site()));
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+    }
+
     @Test void concurrentIdenticalCommandsProduceOneStateTransition() throws Exception {
         var f=published();
         var pool=Executors.newFixedThreadPool(3);
