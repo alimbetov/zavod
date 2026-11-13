@@ -10,7 +10,8 @@ public final class BlueprintReadiness {
 
     public static List<Finding> blockers(ProcessBlueprint blueprint,EquipmentCatalog catalog) {
         var topology=BlueprintValidator.validate(blueprint).stream()
-                .filter(f->f.severity()==BlueprintValidator.Severity.ERROR || f.code().equals("UNBOUND_BOUNDARY"))
+                .filter(f->f.severity()==BlueprintValidator.Severity.ERROR
+                        || f.code().equals("UNBOUND_BOUNDARY") || f.code().equals("RECIRCULATION_UNQUALIFIED"))
                 .map(f->new Finding(f.code(),f.entity())).toList();
         var library=BlueprintCatalogAudit.inspect(blueprint,catalog).stream()
                 .map(f->new Finding(f.code(),f.unitId()+"/"+f.equipmentId())).toList();
