@@ -121,6 +121,71 @@ class BlueprintBusinessJourneyPostgresTest {
     }
 
     @Test
+    void revokedPublicationCannotBeActivatedAndKeepsApprovedHistory() {
+        Fixture f=setup(3);
+        actor("reviewer"); lifecycle.approve(f.siteId(),f.id(),2,f.selected());
+        actor("publisher"); lifecycle.publish(f.siteId(),f.id(),2);
+        lifecycle.revoke(f.siteId(),f.id(),2,"Engineering risk identified");
+        assertEquals(BlueprintApprovalEntity.State.REVOKED,
+                approvals.findById(f.id()+":2").orElseThrow().state());
+        actor("activator");
+        assertEquals("NOT_PUBLISHED",assertThrows(BlueprintLifecycleException.class,
+                ()->lifecycle.activate(f.siteId(),f.id(),2,null)).getMessage());
+        assertNull(sites.findById(f.siteId()).orElseThrow().activeSetId());
+        assertEquals(0,sets.countBySiteId(f.siteId()));
+        assertEquals(f.snapshot(),drafts.loadRevision(f.id(),2));
+        actor("publisher");
+        assertThrows(BlueprintLifecycleException.class,()->lifecycle.publish(f.siteId(),f.id(),2));
+        assertThrows(BlueprintLifecycleException.class,()->lifecycle.revoke(f.siteId(),f.id(),2,"again"));
+    }
+
+    @Test
+    void cannotRevokeCurrentlyActiveBlueprintUntilReplaced() {
+        Fixture f=setup(3);
+        actor("reviewer"); lifecycle.approve(f.siteId(),f.id(),2,f.selected());
+        actor("publisher"); lifecycle.publish(f.siteId(),f.id(),2);
+        actor("activator"); String current=lifecycle.activate(f.siteId(),f.id(),2,null);
+        actor("publisher");
+        assertEquals("ACTIVE_PUBLICATION_CANNOT_REVOKE",assertThrows(BlueprintLifecycleException.class,
+                ()->lifecycle.revoke(f.siteId(),f.id(),2,"Safety concern")).getMessage());
+        assertEquals(BlueprintApprovalEntity.State.PUBLISHED,
+                approvals.findById(f.id()+":2").orElseThrow().state());
+        assertEquals(current,sites.findById(f.siteId()).orElseThrow().activeSetId());
+    }
+
+    @Test
+    void restorePreviouslyActivatedRevisionCreatesNewHistoricalSetAndChecksPointer() {
+        Fixture f=setup(3);
+        actor("reviewer"); lifecycle.approve(f.siteId(),f.id(),2,f.selected());
+        actor("publisher"); lifecycle.publish(f.siteId(),f.id(),2);
+        actor("activator"); String original=lifecycle.activate(f.siteId(),f.id(),2,null);
+        var revision3=new ProcessBlueprint(f.id(),3,10,f.snapshot().units(),
+                f.snapshot().sharedAssets(),f.snapshot().transfers(),f.snapshot().dependencies());
+        studio.saveDraft(f.siteId(),f.id(),2,revision3);
+        actor("reviewer"); lifecycle.approve(f.siteId(),f.id(),3,f.selected());
+        actor("publisher"); lifecycle.publish(f.siteId(),f.id(),3);
+        actor("activator"); String upgraded=lifecycle.activate(f.siteId(),f.id(),3,original);
+        assertEquals("STALE_ACTIVATION_SET",assertThrows(BlueprintLifecycleException.class,
+                ()->lifecycle.restore(f.siteId(),original,original,"Wrong pointer")).getMessage());
+        String restored=lifecycle.restore(f.siteId(),original,upgraded,"Rollback after regression");
+        assertNotEquals(original,restored);
+        assertNotEquals(upgraded,restored);
+        assertEquals(3,sets.countBySiteId(f.siteId()));
+        assertEquals(2,lifecycle.active(f.siteId()).revisionNo());
+        assertEquals(upgraded,lifecycle.active(f.siteId()).previousSetId());
+        assertEquals(original,lifecycle.active(f.siteId()).restoredFromSetId());
+        assertEquals("Rollback after regression",lifecycle.active(f.siteId()).changeReason());
+        assertEquals("ALREADY_ACTIVE",assertThrows(BlueprintLifecycleException.class,
+                ()->lifecycle.restore(f.siteId(),original,restored,"duplicate")).getMessage());
+        assertEquals(f.snapshot(),drafts.loadRevision(f.id(),2));
+        actor("publisher");
+        lifecycle.revoke(f.siteId(),f.id(),3,"Bad revision");
+        actor("activator");
+        assertEquals("NOT_PUBLISHED",assertThrows(BlueprintLifecycleException.class,
+                ()->lifecycle.restore(f.siteId(),upgraded,restored,"revoked target")).getMessage());
+    }
+
+    @Test
     void sameActorCannotApproveAndPublishEvenWithAdministratorRole() {
         Fixture f=setup(3);
         members.saveAndFlush(new SiteMemberEntity(UUID.randomUUID().toString(),
