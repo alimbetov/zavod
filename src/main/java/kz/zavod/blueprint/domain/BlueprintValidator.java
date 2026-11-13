@@ -31,7 +31,8 @@ public final class BlueprintValidator {
                 Set<String> portIds=new HashSet<>();
                 for(Port p:e.ports())if(!portIds.add(p.key()))errors.add(err("DUPLICATE_PORT",e.id()+"/"+p.key()));
             }
-            List<Map.Entry<String,String>> edges=new ArrayList<>();
+            List<Map.Entry<String,String>> materialEdges=new ArrayList<>();
+            List<Map.Entry<String,String>> itemFlowEdges=new ArrayList<>();
             for(Connection c:u.connections()) {
                 Equipment source=nodes.get(c.sourceEquipment()),target=nodes.get(c.targetEquipment());
                 if(source==null||target==null){errors.add(err("UNKNOWN_NODE",u.id()));continue;}
@@ -42,9 +43,14 @@ public final class BlueprintValidator {
                 links.merge(source.id()+"/"+sp.key(),1,Integer::sum);
                 links.merge(target.id()+"/"+tp.key(),1,Integer::sum);
                 if(!pairs.add(source.id()+"/"+sp.key()+">"+target.id()+"/"+tp.key()))errors.add(err("DUPLICATE_CONNECTION",u.id()));
-                edges.add(Map.entry(source.id(),target.id()));
+                if(sp.direction()==Direction.OUT&&tp.direction()==Direction.IN
+                        &&sp.kind()==tp.kind()&&sp.medium().equals(tp.medium())) {
+                    if(sp.kind()==FlowKind.MATERIAL)materialEdges.add(Map.entry(source.id(),target.id()));
+                    else if(sp.kind()==FlowKind.ITEM_FLOW)itemFlowEdges.add(Map.entry(source.id(),target.id()));
+                }
             }
-            boolean cyclicMaterial=cyclic(nodes.keySet(),edges);
+            boolean cyclicMaterial=cyclic(nodes.keySet(),materialEdges);
+            if(cyclic(nodes.keySet(),itemFlowEdges))errors.add(err("ITEM_FLOW_CYCLE",u.id()));
             if(cyclicMaterial&&!u.recirculationAllowed())errors.add(err("MATERIAL_CYCLE",u.id()));
             if(u.recirculationAllowed()&&u.kind()!=UnitKind.CIRCUIT)errors.add(err("RECIRCULATION_NEEDS_CIRCUIT",u.id()));
             if(cyclicMaterial&&u.recirculationAllowed()&&u.kind()==UnitKind.CIRCUIT)

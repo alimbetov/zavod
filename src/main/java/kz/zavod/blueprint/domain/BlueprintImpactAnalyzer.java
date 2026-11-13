@@ -48,7 +48,11 @@ public final class BlueprintImpactAnalyzer {
             for(ProcessUnit u:graph.units())for(ResourceUse use:u.resources())if(use.sharedAssetId().equals(asset))
                 origin.add(u.id());
         }
-        return traverse(graph,origin,delta.changedAssetIds(),false);
+        Impact historicalReachability=traverse(graph,origin,delta.changedAssetIds(),false);
+        // Reachability must include removed historical edges, but resource conflicts
+        // describe the TARGET revision only, never phantom historic overcommit.
+        return new Impact(historicalReachability.affectedUnits(),
+                currentContention(after),historicalReachability.reasons());
     }
 
     private static Impact traverse(ProcessBlueprint b,Set<String> changed,
@@ -105,4 +109,23 @@ public final class BlueprintImpactAnalyzer {
         contention.sort(Comparator.comparing(AssetContention::assetId));
         return new Impact(reasons.keySet(),contention,reasons);
     }
+    private static List<AssetContention> currentContention(ProcessBlueprint blueprint) {
+        Map<String,Long> sums=new HashMap<>();
+        Map<String,SortedSet<String>> consumers=new HashMap<>();
+        for(ProcessUnit unit:blueprint.units())for(ResourceUse use:unit.resources()) {
+            sums.merge(use.sharedAssetId(),(long)use.demand(),Math::addExact);
+            consumers.computeIfAbsent(use.sharedAssetId(),ignored->new TreeSet<>()).add(unit.id());
+        }
+        List<AssetContention> result=new ArrayList<>();
+        for(SharedAsset asset:blueprint.sharedAssets()) {
+            long total=sums.getOrDefault(asset.id(),0L);
+            Set<String> peers=consumers.getOrDefault(asset.id(),Collections.emptySortedSet());
+            boolean exclusive=asset.mode()==AssetMode.EXCLUSIVE&&peers.size()>1;
+            if(total>asset.capacity()||exclusive)
+                result.add(new AssetContention(asset.id(),total,asset.capacity(),exclusive,peers));
+        }
+        result.sort(Comparator.comparing(AssetContention::assetId));
+        return List.copyOf(result);
+    }
+
 }
