@@ -2376,3 +2376,55 @@ Secrets, certificates and remote maintenance access must follow the enterprise O
 **Priority against current roadmap:** OT-0 specifications/contract tests may proceed alongside INT-0 and R0.6; OT-1 virtual laboratory only after a versioned secured signal bridge is available; OT-2/3 remain future product implementation. OT-4 is a separate commissioned activity and may not be marketed as production-ready from simulation alone.
 
 **Definition of Done of the documentation gate:** interface boundaries documented, no direct browser/cloud PLC access, 40 testable scenarios, stage prerequisites and stop rules, explicit open OT decisions and approval evidence checklist. **No implementation is claimed by adding this specification.**
+
+
+---
+
+## 27. R0.6A Engineering Properties / Local Studio Backend Bridge — implementation checkpoint
+
+**Статус:** VERIFIED in GitHub `main` at commit `07137a0fd00e0e653835f5a4f684510310f7af34`, CI run [43388586955](https://github.com/alimbetov/zavod/actions/runs/43388586955) `blueprint-r05` **SUCCESS**. `catalog-smoke` and `plant-scenario-lab` are also SUCCESS on the same SHA. Вся новая реализация — в одной ветке `main`, Liquibase/Flyway отсутствуют; PostgreSQL + JPA остаются основой.
+
+### 27.1 Что действительно появилось в Java
+
+**Физические величины (частичный GREEN GAP-002):**
+- `kz.zavod.engineering.EngineeringUnits`, `EngineeringQuantity`, `EngineeringPropertyDefinition`, `EngineeringPropertyValue`, `EngineeringPropertyAudit`; `BigDecimal`, `MathContext.DECIMAL128`, явный `Dimension`.
+- Поддержка объёма m³/L, расхода m³/h и L/min, массы kg/t, массового расхода kg/h/t/h, давления Pa/bar, мощности W/kW, энергии Wh/kWh, температуры K/degC/°C (с корректным сдвигом), EC mS/cm и pH. Запрет неверных dimension pairs, неизвестных единиц и абсолютной температуры ниже 0 K. НЕ делать выводов о гидравлике/плотности из одних единиц.
+- `EquipmentType` получил immutable versioned `properties` с backward-compatible конструктором. `water-pump`: optional `rated_flow, rated_power, rated_pressure`; `water-tank`: optional `nominal_volume`. Ни одному OEM не присвоены выдуманные паспортные числа или предельные максимумы.
+- `ProcessBlueprint.Equipment` имеет immutable `properties`, source/evidence; старые 4-аргументные экземпляры и отсутствие `properties` в JSON десериализуются в пустой список.
+- `BlueprintCatalogAudit` и `BlueprintReadiness` выявляют unknown/duplicate property, несовместимую единицу, нарушенный допустимый диапазон, недоказанное происхождение и missing required evidence. **Неизвестные значения допустимы в Draft, но не могут стать бесследно APPROVED**.
+- `BlueprintDiff` сохраняет/учитывает свойства при сравнении; изменение паспортного параметра не исчезает при нормализации порядка портов.
+- `BlueprintDraftService` пишет `blueprint.v2`, читает `blueprint.v1` с проверкой исходного SHA-256, не переписывая historic snapshot. Golden PostgreSQL regression подтверждает Save/Reopen и readonly прежних значений.
+
+**Локальный Backend API (частичный GREEN GAP-001 / STUDIO-002/006/007):**
+- `kz.zavod.studio.StudioDevController` с `@Profile("dev-local")` открывает: `POST /api/v1/dev/sites` (локальный демонстрационный Site), `GET /sites/{id}/equipment-types`, `POST /sites/{id}/blueprints`, `GET /sites/{id}/blueprints/{id}`, `GET /revisions/{n}`, `PUT /draft`, `POST /validate`, `GET /impact?from=n&to=m`, `GET/PUT /layouts/{viewId}`. Все пути находятся под `/api/v1`, контроллеры отсутствуют при стандартном профиле.
+- `StudioBlueprintService`: site ownership guard, server-owned `maxActiveLines`, append-only JPA revisions и controlled concurrency conflict; Draft допускает неполные схемы.
+- `StudioViewLayout` и `StudioLayoutEntity/Repository/Service`: отдельный JPA snapshot `unitId, positionsByEquipmentId, viewport, blueprintRevision, layoutVersion`, строгая проверка координат/ID и optimistic compare-and-update. Перемещение узла **не создаёт** новую инженерную BlueprintRevision и не запускает Impact.
+- `StudioInputLimits`: размерные пределы инженерного графа до дорогостоящей обработки; калибровка ограничений и HTTP body length нуждается в дополнительном review.
+- HTTP error codes: typed `400/404/409/422` для malformed JSON, отсутствующего проекта, конфликта и недопустимого инженерного ввода. Нет прямого доступа к JPA entities.
+- **Безопасность:** `server.address=127.0.0.1` только для explicit `dev-local`; guard loopback IP + trusted local Origin + `X-Zavod-Dev-Write` для unsafe methods. Обычный HTTP профиль `denyAll`; запрещено считать `dev-local` промышленной аутентификацией. Никаких Approved/Publish/Activate или PLC write endpoints через этот API.
+
+### 27.2 Исполненные приемочные проверки
+
+| Requirement / test | Метод / факт | Статус |
+|---|---|---|
+| SC-PHYS-001 и часть SC-GAP-002 | `EngineeringPropertiesSmoke`: unit conversions, Celsius/Kelvin affine, invalid dimensions, below-absolute-zero | **33 checks PASS** |
+| Часть SC-GAP-004 | `EngineeringPropertiesSmoke`: catalog constraints, provenance, missing evidence, reject negative flow, duplicate, assumption | **PASS** |
+| Schema compatibility и часть SC-GAP-004 | `BlueprintPersistencePostgresTest.typedEngineeringPropertiesSurvivePostgresAndHistoricV1SnapshotsRemainReadable` | **PASS** |
+| Локальный Create→Validate→Save→Load + layout | `StudioDevApiPostgresTest.localhostCreatesValidatesSavesAndRestoresGraphAndIndependentCanvas` | **PASS** |
+| Local-only boundary, site scope and write header | `StudioDevApiPostgresTest.localOnlyHeaderAndSiteScopeAreEnforced` | **PASS** |
+| Deny-all без dev-local | `StudioDefaultProfileSecurityPostgresTest.localStudioEndpointsAreDeniedWithoutExplicitDevProfile` | **PASS** |
+| Все прежние JPA / Intelligence RED contracts | Maven `test`: **13 тестов, 0 failures, 0 errors**; `blueprint-r05` | **PASS** |
+| Catalog/Plant scenarios | отдельные workflow на том же commit | **PASS** |
+
+**Уточнение:** SC-GAP-001 всё ещё **не выполнен как browser E2E** — React Blueprint Studio не реализован. `localhostCreates...` — backend MockMvc + real PostgreSQL, а не Playwright. SC-GAP-003 «независимо подтверждённый OEM шаблон» тоже открыт, даже если DTO и optional properties уже работают.
+
+### 27.3 Остаточные P0 и стоп-условия
+
+1. **R0.6B React/TypeScript/React Flow Studio:** проект Explorer, Equipment Palette, typed handles и правильная сериализация Blueprint, Inspector паспортных свойств, ViewLayout Save/Reopen, 409 conflict UX, Undo/Redo и Playwright против реального Backend.
+2. **Production authorization:** сейчас API доступен лишь `dev-local`. Для сетевой эксплуатации необходим IdP/роли EDITOR, Site scope, CSRF/session/OIDC, audit и provisioning; текущий backend lifecycle APPROVE/PUBLISH/ACTIVATE нельзя просто открывать анонимному браузеру. DEV sandbox не рекомендован в общей сети даже через reverse proxy.
+3. **GAP-003 physical golden pilot:** независимая инженерная проверка насосного шаблона, достоверных паспортных значений и physical FlowKind/boundaries; недопустимо объявлять фиктивные rating values производственными.
+4. **API hardening:** полный входной body byte limit, поля/типы DTO, deterministic diagnostic locations, contract/OpenAPI versioning, duplicate subgraph references и fuzz/parser limits. Прямое отображение `ProcessBlueprint` на клиенте является временным контрактом до typed editor DTO mapper.
+5. **View layout consistency:** refresh при смене инженерной ревизии, deterministic migration/orphan handling, crash/restart и backup/restore e2e. Внешний idempotency key для сетевых PATCH/PUT пока не готов.
+6. **Real process/OT:** пока нет historian, настоящих сигналов, process-qualified гидропонной рециркуляции, HMI/Smart Focus runtime или PLC интеграции. Не выводить из успешных тестов физический throughput или готовность к безопасности.
+
+**Итог:** R0.6A — частично реализован, engineering values и local bridge проходят CI. Полный P0 продуктовый gate остаётся OPEN до работающего React Canvas + engineer-qualified process fixture + реальных browser E2E. R0.7 Smart Focus, INT ML/Optimization и OT-0…OT-6 не переводить в DONE автоматически.

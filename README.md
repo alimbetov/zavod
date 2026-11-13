@@ -13,7 +13,8 @@
 - JPA/PostgreSQL append-only Blueprint revisions, атомарный BlueprintHead CAS, controlled revision conflicts, SHA-256 snapshot integrity.
 - Java/JUnit/Testcontainers smoke и интеграционные тесты, GitHub Actions на `main`.
 - Серверное утверждение и публикация конкретной ревизии, выбор активных модулей, сохранение исторических `PlantActivationSet`, атомарное обновление активного указателя площадки и проверка прав на основе authenticated principal + SiteMember.
-- Сетевые HTTP API пока отсутствуют; подключение внешнего провайдера пользователей, provisioning площадок, раздельные контуры утверждения, полноценный security audit и идемпотентность остаются следующими задачами.
+- **R0.6A Engineering Properties:** физические единицы и dimension checks, паспортные значения/диапазоны/evidence и сохранение свойств оборудования в versioned Blueprint JSON (`blueprint.v2` с чтением v1).
+- **R0.6A Studio Backend Bridge (только `dev-local`):** версионированный Equipment Catalog, создание/чтение/сохранение Draft, проверка схемы, Impact Analysis, независимый JPA ViewLayout с optimistic conflict. Полноценный производственный HTTP API и внешняя аутентификация всё ещё НЕ реализованы.
 
 ## Ещё НЕ реализовано / НЕ квалифицировано
 
@@ -24,6 +25,32 @@
 - 99 физических PLC, промышленная SCADA/MES, real hardware/OT FAT/SAT, HMI и управление реальным оборудованием.
 
 **Технологии:** Java 21 / Spring Boot / JPA / PostgreSQL; React + TypeScript + React Flow (следующий этап); бесплатный OSS (Apache-2.0 предпочтительно, MIT и другие совместимые permissive лицензии допустимы с уведомлениями). Vaadin Flow не используется. Liquibase/Flyway пока нет. `spring.jpa.hibernate.ddl-auto=update` только для DEV; в PROD `validate` и отдельная квалификация схемы.
+
+## Локальный Backend API R0.6A (только разработка)
+
+По умолчанию HTTP API **закрыт**. Для локального стенда с PostgreSQL и Java 21 явно включите профиль `dev-local`, который слушает только `127.0.0.1`:
+
+```bash
+export ZAVOD_DB_URL='jdbc:postgresql://127.0.0.1:5432/zavod'
+export ZAVOD_DB_USER='zavod'
+export ZAVOD_DB_PASSWORD='<set-locally-not-in-git>'
+mvn spring-boot:run -Dspring-boot.run.profiles=dev-local
+```
+
+В другом терминале:
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/v1/dev/sites \
+  -H 'Content-Type: application/json' \
+  -H 'X-Zavod-Dev-Write: true' \
+  -d '{"maxActiveLines":10}'
+# Подставьте siteId из ответа:
+curl http://127.0.0.1:8080/api/v1/sites/<siteId>/equipment-types
+curl -X POST http://127.0.0.1:8080/api/v1/sites/<siteId>/blueprints \
+  -H 'X-Zavod-Dev-Write: true'
+```
+
+Далее API поддерживает `PUT .../blueprints/{id}/draft` (`expectedRevision` и `snapshot`), `POST .../validate`, `GET .../impact?from=1&to=2`, отдельные `GET/PUT .../layouts/{viewId}`. Запросы изменения требуют `X-Zavod-Dev-Write: true`; внешний IP и недоверенный браузерный Origin запрещены. **Это локальная песочница, а не production-аутентификация.** В обычном профиле `denyAll`, API-контроллеры `dev-local` не создаются. Никаких PLC write-операций.
 
 ## Следующие этапы
 
