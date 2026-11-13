@@ -8,6 +8,10 @@ import kz.zavod.blueprint.lifecycle.*;
 import kz.zavod.blueprint.persistence.BlueprintDraftService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -39,6 +43,7 @@ class ActivationCommandPostgresTest {
     @Autowired ActivationCommandRepository receipts;
     @Autowired ActivationTransitionRepository transitions;
     @Autowired PlantActivationSetRepository sets;
+    @Autowired PlatformTransactionManager transactionManager;
     @AfterEach void clear(){SecurityContextHolder.clearContext();}
 
     private void actor(String username) {
@@ -86,6 +91,31 @@ class ActivationCommandPostgresTest {
         assertThrows(BlueprintLifecycleException.class,()->commands.activate(
                 f.site(),"command-1",f.blueprint(),1,"another-set"));
         assertEquals(1,receipts.count());
+    }
+
+    @Test void lostCommitAcknowledgementCanBeReconciledWithoutDoubleExecution() {
+        var f=published();
+        // Fault injection: a transport/ack failure after DB commit, not a real TCP cut.
+        // TransactionSynchronization.afterCommit runs after persistence is durable.
+        var transaction=new TransactionTemplate(transactionManager);
+        assertThrows(IllegalStateException.class,()->transaction.execute(status->{
+            var receipt=commands.activate(f.site(),"ack-lost",f.blueprint(),1,null);
+            assertFalse(receipt.replayed());
+            TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override public void afterCommit() {
+                        throw new IllegalStateException("SIMULATED_LOST_COMMIT_ACK");
+                    }
+                });
+            return receipt;
+        }));
+        var committed=commands.reconcile(f.site(),"ack-lost");
+        assertTrue(committed.replayed());
+        assertEquals(committed.activationSetId(),
+            commands.activate(f.site(),"ack-lost",f.blueprint(),1,null).activationSetId());
+        assertEquals(1,receipts.count());
+        assertEquals(1,transitions.count());
+        assertEquals(1,sets.countBySiteId(f.site()));
     }
 
     @Test void concurrentIdenticalCommandsProduceOneStateTransition() throws Exception {
