@@ -3,7 +3,7 @@
 **Версия документа:** 0.2 (Consolidated Draft)  
 **Дата baseline:** 13 ноября 2026  
 **Статус:** DRAFT / требуется техническое, OT-инженерное и продуктовое ревью; не свидетельствует о реализации функций или промышленной сертификации.  
-**Единственный нормативный файл требований:** \`docs/ZAVOD-MASTER-SPEC.md\`.  
+**Единственный нормативный файл требований:** `docs/ZAVOD-MASTER-SPEC.md`.  
 **Репозиторий:** https://github.com/alimbetov/zavod  
 **Порядок разработки:** Scenario Design → RED-тесты → Test Review → GREEN → Regression → Independent Review → PR → Merge.
 
@@ -18,18 +18,18 @@
 | Первая реальная ценность | Инженер создаёт цифровую модель разных линий, проверяет соединения, тестирует виртуально и получает черновую HMI |
 | Иерархия | Organization → Site → Plant → Line → LineRevision; общие PlantAsset и Controller существуют на уровне площадки/сайта |
 | Число линий | В первой поставке 1–10 **активных** линий на площадке; DRAFT площадки без линий допустим. Лимит — конфигурируемая бизнес-политика, не физический предел БД. 100 линий — возможная будущая *нагрузочная цель*, не обещание |
-| Тип производства | \`Line.profileKey\`: BATCH / CONTINUOUS / DISCRETE / UTILITY; один Plant может содержать разные процессы. \`Plant.plantType\` не определяет единственный тип всех линий |
-| Общий физический ресурс | Один \`PlantAsset\`, ссылки от нескольких линий; проверка занятости/влияния при согласованной активации \`PlantActivationSet\` |
+| Тип производства | `Line.profileKey`: BATCH / CONTINUOUS / DISCRETE / UTILITY; один Plant может содержать разные процессы. `Plant.plantType` не определяет единственный тип всех линий |
+| Общий физический ресурс | Один `PlantAsset`, ссылки от нескольких линий; проверка занятости/влияния при согласованной активации `PlantActivationSet` |
 | Пилотные демонстрации | Бетонная BATCH + насосная CONTINUOUS; затем розлив/фасовка DISCRETE как третий профиль |
 | Конструктор | **React + TypeScript + React Flow (@xyflow/react)**. Vaadin Flow в MVP **не используется** |
 | Backend и домен | Java 21 + Spring Boot (модульный монолит), JPA/PostgreSQL позднее; критическая валидация выполняется на сервере, UI может показывать локальные подсказки |
 | Интеграция | Отдельный site-local Industrial Edge, сначала OPC UA и Modbus TCP **строго read-only** |
 | Контроль оборудования | PLC, safety PLC и защитные цепи остаются автономны; Java/Web/Cloud не отвечают за safety interlocks, E-stop, deterministic control |
-| Рецептура | \`RecipeRevision\` относится к производственной процедуре/MES; \`Mixer\` объявляет capability (TIMED/RECIPE_CAPABLE/CONTINUOUS), но не хранит рецепты в шаблоне |
+| Рецептура | `RecipeRevision` относится к производственной процедуре/MES; `Mixer` объявляет capability (TIMED/RECIPE_CAPABLE/CONTINUOUS), но не хранит рецепты в шаблоне |
 | Лицензии зависимостей | Только бесплатный для предполагаемого коммерческого использования OSS; **Apache-2.0 предпочтительно**, допускаются совместимые разрешительные MIT/BSD/ISC при сохранении уведомлений. Платные Pro-расширения не являются обязательной частью продукта |
-| Лицензия собственного кода | Вопрос владельца проекта \`DEC-16\`; использование Apache-2.0 как собственной лицензии требует отдельного явного оформления \`LICENSE\`, не предполагается автоматически |
+| Лицензия собственного кода | Вопрос владельца проекта `DEC-16`; использование Apache-2.0 как собственной лицензии требует отдельного явного оформления `LICENSE`, не предполагается автоматически |
 | Node.js | Только frontend toolchain (сборка/тесты), не производственный Backend и не PLC runtime |
-| Разработка | Отдельные ветки и Draft PR, без автоматического merge; \`main\` менять только после review |
+| Разработка | Отдельные ветки и Draft PR, без автоматического merge; `main` менять только после review |
 
 **Лицензии подтверждённых компонентов:** React и React Flow лицензированы по **MIT**, а не Apache-2.0; они допускают коммерческое применение при выполнении условий лицензии. Не записывать неверную лицензию в SBOM. Официальные первоисточники: https://github.com/react/react/blob/main/LICENSE и https://github.com/xyflow/xyflow/blob/main/README.md. Условия каждого пакета (включая транзитивные зависимости) проверяются при релизе; сохраняем LICENSE/NOTICE, SBOM и не допускаем неожиданные платные требования.
 
@@ -204,11 +204,11 @@
 
 ## 4. Универсальная библиотека и периферия
 
-**Правило конфигурации:** \`EquipmentType\` с \`key + version\`, декларациями \`Capability\`, \`Mode\`, \`PortDefinition\`, \`ParameterDefinition\`, \`SignalDefinition\`, \`hmiTemplateKey\`; \`EquipmentInstance\` — размещённый экземпляр; \`PlantAsset\` — единый физический ресурс. Никаких классов \`MixerWithRecipe\` и \`MixerWithoutRecipe\` как отдельных фундаментальных сущностей.
+**Правило конфигурации:** `EquipmentType` с `key + version`, декларациями `Capability`, `Mode`, `PortDefinition`, `ParameterDefinition`, `SignalDefinition`, `hmiTemplateKey`; `EquipmentInstance` — размещённый экземпляр; `PlantAsset` — единый физический ресурс. Никаких классов `MixerWithRecipe` и `MixerWithoutRecipe` как отдельных фундаментальных сущностей.
 
-- Типы смешивания: порционный Batch Mixer, Continuous Mixer, Inline/Static Mixer, Tank Agitator. \`RecipeRevision\` находится в MES, режим TIMED/RECIPE_CAPABLE/CONTINUOUS_SETPOINT — capability оборудования.
-- Порты: \`MATERIAL\` (порошки/жидкости/гранулы), \`ITEM_FLOW\` (бутылки/короба/поддоны), \`UTILITY\` (вода, энергия, воздух), \`INSTRUMENTATION/SIGNAL\` (измерения), \`CONTROL\` (только будущие разрешённые действия; не равен физическому приводу).
-- Порты имеют id/portKey, direction, medium/item type, min/max links, unit/capacity, optional required; порт \`waterIn\` и \`admixtureIn\` независимы.
+- Типы смешивания: порционный Batch Mixer, Continuous Mixer, Inline/Static Mixer, Tank Agitator. `RecipeRevision` находится в MES, режим TIMED/RECIPE_CAPABLE/CONTINUOUS_SETPOINT — capability оборудования.
+- Порты: `MATERIAL` (порошки/жидкости/гранулы), `ITEM_FLOW` (бутылки/короба/поддоны), `UTILITY` (вода, энергия, воздух), `INSTRUMENTATION/SIGNAL` (измерения), `CONTROL` (только будущие разрешённые действия; не равен физическому приводу).
+- Порты имеют id/portKey, direction, medium/item type, min/max links, unit/capacity, optional required; порт `waterIn` и `admixtureIn` независимы.
 - Датчик давления моделируется как измерительный компонент, а не по умолчанию трубопровод с входом/выходом воды. Проточный прибор может отдельно объявлять реальные технологические порты.
 - Дублированные/занятые/несовместимые соединения, циклы без разрешённого recirculation-профиля, незаполненные обязательные входы блокируют публикацию/симуляцию.
 - Переводы RU/KK/EN — через display keys; keys и единицы не зависят от языка.
@@ -233,18 +233,18 @@
 
 | Template key | Технологическая линия | Путь | Ввод |
 |---|---|---|---|
-| \`batch.concrete.v1\` | Бетон / строительные смеси | Бункер/силос → дозатор → миксер → выгрузка | Первый |
-| \`continuous.pump.v1\` | Насос / водоподготовка | Ёмкость → насос → фильтр/клапан → измерения | Первый |
-| \`discrete.bottling.v1\` | Розлив | Подача тары → наполнитель → укупорка → этикетка → контроль | Затем |
-| \`discrete.bagging.v1\` | Весовая фасовка | Бункер → дозатор → упаковка → контроль веса | Затем |
-| \`batch.feed-pellet.v1\` | Комбикорм | Дробилка → дозирование → миксер → грануляция → охладитель | P1 |
-| \`discrete.block-press.v1\` | Блоки/кирпич/плитка | Смешивание → вибропресс → поддоны → выдержка | P1 |
-| \`continuous.plastic-recycling.v1\` | Переработка пластика | Дробление → мойка → сушка → экструзия → гранулирование | P1 |
-| \`continuous.grain-processing.v1\` | Зерно и крупы | Очистка → сепарация → обработка → сортировка → упаковка | P1 |
-| \`discrete.conveyor-sort.v1\` | Конвейер/сортировка | Подача → обнаружение → сортировка → отвод | P1 |
-| \`discrete.bakery.v1\` | Выпечка | Замес → деление → расстойка → печь → упаковка | P2 |
+| `batch.concrete.v1` | Бетон / строительные смеси | Бункер/силос → дозатор → миксер → выгрузка | Первый |
+| `continuous.pump.v1` | Насос / водоподготовка | Ёмкость → насос → фильтр/клапан → измерения | Первый |
+| `discrete.bottling.v1` | Розлив | Подача тары → наполнитель → укупорка → этикетка → контроль | Затем |
+| `discrete.bagging.v1` | Весовая фасовка | Бункер → дозатор → упаковка → контроль веса | Затем |
+| `batch.feed-pellet.v1` | Комбикорм | Дробилка → дозирование → миксер → грануляция → охладитель | P1 |
+| `discrete.block-press.v1` | Блоки/кирпич/плитка | Смешивание → вибропресс → поддоны → выдержка | P1 |
+| `continuous.plastic-recycling.v1` | Переработка пластика | Дробление → мойка → сушка → экструзия → гранулирование | P1 |
+| `continuous.grain-processing.v1` | Зерно и крупы | Очистка → сепарация → обработка → сортировка → упаковка | P1 |
+| `discrete.conveyor-sort.v1` | Конвейер/сортировка | Подача → обнаружение → сортировка → отвод | P1 |
+| `discrete.bakery.v1` | Выпечка | Замес → деление → расстойка → печь → упаковка | P2 |
 
-Профиль может содержать гибридные операции; \`ProcessKind\` является основной классификацией, а не запретом внутреннего сочетания Batch и Discrete. Предложение 10 шаблонов **не означает** обязанность иметь 10 линий одновременно.
+Профиль может содержать гибридные операции; `ProcessKind` является основной классификацией, а не запретом внутреннего сочетания Batch и Discrete. Предложение 10 шаблонов **не означает** обязанность иметь 10 линий одновременно.
 
 Результаты ознакомления с китайскими поставщиками — **кандидаты рынка**, не подтверждённый рейтинг спроса/интероперабельности. Изучать прежде всего модель+прошивку OEM, доступные теги и протокол, интерфейсы HMI, схемы питания и actual I/O. Китайские PLC/HMI брендов Inovance, Xinje, Haiwell — кандидаты для будущего лабораторного read-only теста, не заявленная совместимость.
 
@@ -252,7 +252,7 @@
 
 ### Интеграционные варианты оборудования
 
-\`SIMULATED\` (без реального PLC); \`READ_ONLY_CONNECTED\` (контроллер/шлюз, измерения с quality); \`MANUAL_REPORTING\` (внесение результата для нецифрового станка с явной маркировкой). Никакой автоматической подмены ручного значения фактической телеметрией.
+`SIMULATED` (без реального PLC); `READ_ONLY_CONNECTED` (контроллер/шлюз, измерения с quality); `MANUAL_REPORTING` (внесение результата для нецифрового станка с явной маркировкой). Никакой автоматической подмены ручного значения фактической телеметрией.
 
 
 ---
@@ -372,7 +372,7 @@ Mixer → Discharge.
 
 **Первый runtime:** React/Vite frontend + чистое Java 21 domain ядро; после квалификации UI — один Spring Boot MVC modular-monolith + PostgreSQL. Отдельный локальный Edge вводится только на этапе read-only PLC.
 
-\`\`\`mermaid
+```mermaid
 flowchart TB
   U["React UI: Plant / Designer / HMI / MES"]
   C["Java 21: Engineering, Catalog, Validation, Simulation, Operations, Auth"]
@@ -385,7 +385,7 @@ flowchart TB
   ED -->|Normalized telemetry| C
   PLC -->|Read/subscription only| ED
   PLC --> IO
-\`\`\`
+```
 
 **Java остаётся единым источником серверной доменной валидации**, TypeScript — интерактивный графический слой. Не плодить отдельные несовместимые определения правил: версия JSON Schema/DTO, fixtures и contract tests должны согласовываться с Java. Для воспроизводимости фиксировать версии JDK/Node/package-lock и покрывать production build.
 
@@ -407,13 +407,13 @@ flowchart TB
 
 ### Протокольный контракт
 
-\`SignalObservation(siteId, deviceId, signalKey, value, unit, sourceTimestamp, receivedAt, quality, sequence, provenance)\`; \`quality ∈ {GOOD, UNCERTAIN, BAD, STALE}\` с явно описанной семантикой STALE как derived display status. Сырые адреса PLC никогда не становятся стабильными инженерными идентификаторами оборудования. Один PLC может обслуживать несколько линий, и линия может читать несколько PLC (N:M через binding).
+`SignalObservation(siteId, deviceId, signalKey, value, unit, sourceTimestamp, receivedAt, quality, sequence, provenance)`; `quality ∈ {GOOD, UNCERTAIN, BAD, STALE}` с явно описанной семантикой STALE как derived display status. Сырые адреса PLC никогда не становятся стабильными инженерными идентификаторами оборудования. Один PLC может обслуживать несколько линий, и линия может читать несколько PLC (N:M через binding).
 
 ### Версионирование и хранение
 
-- \`LineDefinition schemaVersion=3\` — **целевая**, пока несовместимость с прежним автономным JSON v1/v2 должна разрешаться явным мигратором с golden fixtures.
-- \`DRAFT → IN_REVIEW → APPROVED → PUBLISHED → SUPERSEDED\`; публикация immutable; rollback как новая revision.
-- \`PlantActivationSet\` связывает совместимые активные ревизии линий и общих ресурсов, проверяет конфликты перед активацией.
+- `LineDefinition schemaVersion=3` — **целевая**, пока несовместимость с прежним автономным JSON v1/v2 должна разрешаться явным мигратором с golden fixtures.
+- `DRAFT → IN_REVIEW → APPROVED → PUBLISHED → SUPERSEDED`; публикация immutable; rollback как новая revision.
+- `PlantActivationSet` связывает совместимые активные ревизии линий и общих ресурсов, проверяет конфликты перед активацией.
 - JSONB snapshot + реляционные ключевые индексы (после R1); optimistic locking/ETag, transaction audit.
 - UTC события; TZ как атрибут Site; decimal и явная unit conversion для массы/объёма.
 - R0 localStorage — временный черновик с recovery, не промышленный архив.
@@ -777,13 +777,13 @@ Modbus TCP:
 |---|---|
 | SC-ML-001 | Plant с одной Batch линией → допустимая активация |
 | SC-ML-002 | Plant с 10 разнотипными линиями → успешная проверка совместимых ревизий |
-| SC-ML-003 | 11-я активная линия → доменная ошибка \`LINE_LIMIT_EXCEEDED\`, черновик не потерян |
+| SC-ML-003 | 11-я активная линия → доменная ошибка `LINE_LIMIT_EXCEEDED`, черновик не потерян |
 | SC-ML-004 | Plant DRAFT без линий сохраняется, но не активируется |
 | SC-ML-005 | Concrete Batch и Pump Continuous соседствуют; насос не требует бетонного рецепта |
 | SC-ML-006 | Один Controller связан с сигналами двух линий, без копирования контроллера |
 | SC-ML-007 | Одна линия читает два PLC, без неявных write-команд |
 | SC-ML-008 | Две линии ссылаются на один физический PlantAsset |
-| SC-ML-009 | Конфликт эксклюзивного ресурса → блокирующая ошибка \`SHARED_RESOURCE_CONFLICT\` |
+| SC-ML-009 | Конфликт эксклюзивного ресурса → блокирующая ошибка `SHARED_RESOURCE_CONFLICT` |
 | SC-ML-010 | Перемещение HMI-виджета не меняет инженерный граф/SignalBinding |
 | SC-ML-011 | Новая версия EquipmentTemplate не меняет уже ACTIVE LineRevision |
 | SC-ML-012 | HMI показывает VIRTUAL/BAD/STALE и timestamp/источник |
@@ -967,7 +967,7 @@ R0.1-IMPORT → R0.2 → R1.0 → R2.0 → R2.1 → R3.0 → R4+.
 | Артефакт | Статус |
 |---|---|
 | GitHub PR #1 (документация) | Draft / review не завершён |
-| GitHub PR #2 (\`feat/r0-smart-equipment-library\`) | Draft; Java 21, 15 типов, 2 профиля; \`catalog-smoke\` GitHub Actions PASS на \`0df0bb23243aa5b1511d34b8aa93f2fe66da8c2f\` |
+| GitHub PR #2 (`feat/r0-smart-equipment-library`) | Draft; Java 21, 15 типов, 2 профиля; `catalog-smoke` GitHub Actions PASS на `0df0bb23243aa5b1511d34b8aa93f2fe66da8c2f` |
 | Старый React Line Designer R0.1 | Отдельный архив, **не импортирован** в этот репозиторий |
 | Line Graph + multi-line + HMI generator | Только требования, не реализация |
 | Backend Spring Boot/PostgreSQL | Не реализован |
@@ -1016,7 +1016,7 @@ R0.1-IMPORT → R0.2 → R1.0 → R2.0 → R2.1 → R3.0 → R4+.
 
 | ID | Статус | Правило |
 |---|---|---|
-| DEC-ML-01 | Proposed | \`maxActiveLines=10\` — политический лимит выпуска, не техническая константа модели |
+| DEC-ML-01 | Proposed | `maxActiveLines=10` — политический лимит выпуска, не техническая константа модели |
 | DEC-ML-02 | Proposed | Общая машина — один PlantAsset с несколькими ссылками |
 | DEC-ML-03 | Proposed | Site Controller и Line связаны через SignalBinding N:M |
 | DEC-ML-04 | Proposed | Line PUBLISHED отдельно от согласованного PlantActivationSet ACTIVE |
@@ -1081,4 +1081,4 @@ R0.1-IMPORT → R0.2 → R1.0 → R2.0 → R2.1 → R3.0 → R4+.
 - License React Flow (MIT): https://github.com/xyflow/xyflow/blob/main/README.md
 - Региональные промышленные нормы/допуски/инструкции конкретного объекта должны быть получены и проверены до пилота.
 
-**Исторический provenance:** консолидация 11 прежних файлов из ветки \`docs/r0-industrialos-master-spec\` коммит \`3ecba55aa1e10fce79f58b16ed8e7c44b62ce957\`. Прежние \`docs/requirements\`, \`docs/architecture\`, \`docs/security\`, \`docs/testing\`, \`docs/roadmap\`, \`docs/decisions\`, \`docs/strategy\` сохранены в Git history, но текущий нормативный файл один.
+**Исторический provenance:** консолидация 11 прежних файлов из ветки `docs/r0-industrialos-master-spec` коммит `3ecba55aa1e10fce79f58b16ed8e7c44b62ce957`. Прежние `docs/requirements`, `docs/architecture`, `docs/security`, `docs/testing`, `docs/roadmap`, `docs/decisions`, `docs/strategy` сохранены в Git history, но текущий нормативный файл один.
