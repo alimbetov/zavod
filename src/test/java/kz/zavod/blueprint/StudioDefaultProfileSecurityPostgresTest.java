@@ -33,6 +33,10 @@ class StudioDefaultProfileSecurityPostgresTest {
     void localStudioEndpointsAreDeniedWithoutExplicitDevProfile() throws Exception {
         mvc.perform(get("/api/v1/dev/sites")).andExpect(status().isForbidden());
         mvc.perform(get("/api/v1/sites/local-test/equipment-types")).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/sites/local-test/projects")).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/sites/local-test/projects")
+            .header("X-Zavod-Dev-Write","true").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"name\":\"Must not open\"}")).andExpect(status().isForbidden());
         mvc.perform(post("/api/v1/dev/sites").header("X-Zavod-Dev-Write","true")
             .contentType(MediaType.APPLICATION_JSON).content("{\"maxActiveLines\":10}"))
             .andExpect(status().isForbidden());

@@ -36,7 +36,7 @@ public class StudioLayoutService {
     @Transactional
     public LayoutResponse save(String siteId,UUID blueprintId,String viewId,SaveLayout command) {
         Objects.requireNonNull(command);
-        blueprints.requireOwner(siteId,blueprintId);
+        blueprints.requireWritable(siteId,blueprintId);
         ProcessBlueprint b=blueprints.load(siteId,blueprintId);
         if(b.revision()!=command.blueprintRevision())
             throw new StudioConflictException("STALE_BLUEPRINT_FOR_LAYOUT");
