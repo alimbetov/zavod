@@ -41,7 +41,10 @@ public class BlueprintLifecycleService {
     public void approve(String siteId,UUID blueprintId,long revision,Set<String> selectedUnitIds){
         String actor=authorize(siteId,SiteMemberEntity.Role.REVIEWER);
         verifyOwned(siteId,blueprintId);
-        SiteEntity site=sites.findById(siteId).orElseThrow(()->new BlueprintLifecycleException("UNKNOWN_SITE"));
+        // Serialize approvals for this site before the existence check. PostgreSQL's row
+        // lock is held until commit, so concurrent requests cannot both accept the
+        // same revision. Keep the unique index as an independent last line of defense.
+        SiteEntity site=sites.lockSite(siteId).orElseThrow(()->new BlueprintLifecycleException("UNKNOWN_SITE"));
         var snapshot=drafts.loadRevision(blueprintId,revision);
         var findings=BlueprintPublicationGate.preflight(snapshot,Set.copyOf(selectedUnitIds),site.maxActiveLines(),catalog);
         if(!findings.isEmpty())throw new BlueprintLifecycleException(
