@@ -39,6 +39,7 @@ class BusinessTransitionLedgerPostgresTest {
     @Autowired ActivationCommandService commands;
     @Autowired JdbcTemplate jdbc;
     @Autowired BusinessTransitionRepository ledger;
+    @Autowired BusinessTransitionLedger ledgerVerifier;
     @AfterEach void clear(){SecurityContextHolder.clearContext();}
 
     private void actor(String name) {
@@ -71,7 +72,7 @@ class BusinessTransitionLedgerPostgresTest {
         actor("publisher");
         lifecycle.publish(f.site(),f.blueprint(),1);
         actor("activator");
-        String result=commands.activate(f.site(),"ledger-command",f.blueprint(),1,null);
+        String result=commands.activate(f.site(),"ledger-command",f.blueprint(),1,null).activationSetId();
         var rows=ledger.findBySiteIdOrderBySequenceNoAsc(f.site());
         assertEquals(List.of("APPROVE","PUBLISH","ACTIVATE"),
             rows.stream().map(r->r.eventType().name()).toList());
@@ -79,8 +80,9 @@ class BusinessTransitionLedgerPostgresTest {
             rows.stream().map(BusinessTransitionEntity::actorId).toList());
         assertEquals(result,rows.get(2).newSetId());
         assertEquals("ledger-command",rows.get(2).commandKey());
-        assertEquals(3,rows.stream().map(BusinessTransitionEntity::contentHash).distinct().count()==1?3:0);
+        assertEquals(1,rows.stream().map(BusinessTransitionEntity::contentHash).distinct().count());
         assertEquals(3,rows.stream().map(BusinessTransitionEntity::eventHash).distinct().count());
+        ledgerVerifier.verifySite(f.site());
         assertEquals(0,rows.get(0).previousEventHash().length());
         assertEquals(rows.get(0).eventHash(),rows.get(1).previousEventHash());
         assertEquals(rows.get(1).eventHash(),rows.get(2).previousEventHash());
