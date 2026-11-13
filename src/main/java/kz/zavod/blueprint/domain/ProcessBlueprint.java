@@ -6,7 +6,7 @@ import java.util.UUID;
 
 /** Immutable engineering aggregate. A process unit can be a line, circuit, station or zone. */
 public record ProcessBlueprint(
-        UUID id, long revision, int maxActiveUnits,
+        UUID id, long revision, int maxActiveLines,
         List<ProcessUnit> units,
         List<SharedAsset> sharedAssets,
         List<Transfer> transfers,
@@ -14,7 +14,7 @@ public record ProcessBlueprint(
 
     public ProcessBlueprint {
         Objects.requireNonNull(id, "blueprint id");
-        if (revision < 1 || maxActiveUnits < 1) throw new IllegalArgumentException("Invalid revision/unit policy");
+        if (revision < 1 || maxActiveLines < 1) throw new IllegalArgumentException("Invalid revision/line policy");
         units = List.copyOf(units);
         sharedAssets = List.copyOf(sharedAssets);
         transfers = List.copyOf(transfers);
