@@ -1399,3 +1399,35 @@ spring.datasource.hikari.connection-timeout=30000
 **Важная семантика:** `BlueprintPublicationGate.preflight()` проверяет только выбранные активные модули, а не все черновики. Это read-only preflight и **не** persisted activation API. `ProcessBlueprint.maxActiveLines` сохраняется в старом контракте JSON ради совместимости, но ограничение активации берётся из серверной политики, не из пользовательского снимка. Старые снимки остаются читаемыми. Для будущего persisted ActivationSet добавить site ownership и approvals перед доступом через сеть.
 
 **Режим работы после интеграции:** единственный `main`, без создания дополнительных веток по умолчанию. GitHub Actions автоматически запускаются на `main`. Новые требования вносятся только в этот файл.
+
+
+### 19.11 Фактический итог слияния PR #3/#4 и дополнительной проверки main
+
+**Факт интеграции:** PR #3, #4 merged в `main`; последующий коммит `9a2cc21e1f03f48c6e6901f66daf06284dbddded` добавил 10 000 воспроизводимых seeded randomized graph scenarios. GitHub Actions в `main`: `catalog-smoke`, `plant-scenario-lab`, `blueprint-r05` = SUCCESS; в `blueprint-r05`: 47 core checks, 30 hardening checks, 10 000 seeded scenarios, 3 JUnit/PostgreSQL Testcontainers tests без failures/errors.
+
+**Разделение фактической готовности:**
+
+| Audit ID | Статус по коду | Остаточный блокер |
+|---|---|---|
+| AUD-001 | FIXED/CI PASS | 1 000 hub consumers; промышленный performance SLA ещё не утверждён |
+| AUD-002 | PARTIAL | Semantic diff и exact golden Impact PASS; не реализованы typed cause graph, comprehensive reason paths и разные policy последствия всех change kinds |
+| AUD-003 | PARTIAL | PostgreSQL CAS и concurrent writers PASS; отсутствует persisted idempotency key и HTTP 409 API |
+| AUD-004 | PARTIAL | Static shared-capacity preflight/consumer IDs PASS; нет квалифицированной модели time-window и расписаний |
+| AUD-005 | PARTIAL | Physical Boundary binding/cardinality PASS; полная трассировка межлинейного physical path и publish workflow ещё не реализованы |
+| AUD-006 | FIXED/CI PASS | Несколько immutable template versions сохраняются; явные миграции каталогов — отдельный этап |
+| AUD-007 | PARTIAL | Server-provided active-line quota и 99 DRAFT/10 selected PASS; persisted ActivationSet пока отсутствует |
+| AUD-008 | OPEN | Нет авторизованной транзакции APPROVE/PUBLISH/ACTIVATE; read-only preflight не равен публикации |
+| AUD-009 | FIXED/CI PASS | StreamKind в каталожных портах и сравнение с Blueprint |
+| AUD-010 | OPEN | Большинство синтетических R0.4 OEM шаблонов не квалифицировано для публикации |
+| AUD-011 | OPEN | Full JSON snapshots; нет performance evidence для materialized per-unit revisions |
+| AUD-012 | OPEN | Нет Site-scoped RBAC, actor audit и HTTP write API |
+| AUD-013 | PARTIAL | Corrupted JSON / unknown schema_version тестируются; нет восстановления после реального рестарта/backup |
+| AUD-014 | FIXED/CI PASS | Duplicate ResourceUse обнаруживается, остальные structural duplicate cases расширять |
+| AUD-015 | OPEN | Нет материального баланса, bounded buffers и физических времен операций |
+| AUD-016 | OPEN | Нет process-restart и mid-transaction DB outage испытаний |
+| AUD-017 | PARTIAL | 10 000 deterministic seeded graph scenarios PASS; jqwik shrinking/mutation/negative property oracle ещё не реализованы |
+| AUD-018 | OPEN | Нет замеров p95/p99/CPU/heap/SQL для 99/500/1 000 модулей |
+| AUD-019 | OPEN | Гидропоника пока modelable CIRCUIT, но реальный circulation/process profile не квалифицирован |
+| AUD-020 | OPEN | Нет интегрированного React Studio, HMI/MES и Industrial Edge |
+
+**Решение:** разработка ведётся только в `main`, без новых рабочих веток. Эти статусы относятся к инженерному прототипу, а не к production-licensed control system. Не маркировать AUD-008, AUD-010, AUD-012, AUD-015, AUD-018, AUD-019, AUD-020 как закрытые. Зелёный CI подтверждает исполненные контрактные тесты, но не промышленную квалификацию.
