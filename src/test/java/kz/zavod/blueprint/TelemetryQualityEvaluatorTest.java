@@ -28,6 +28,9 @@ class TelemetryQualityEvaluatorTest {
         assertThrows(IllegalArgumentException.class,()->new SignalDefinition(ID,"local-unit-test",
                 definition.blueprintId(),1,"L1","pump","pressure","bar",
                 SourceKind.SIMULATED,Duration.ofNanos(1)));
+        assertThrows(IllegalArgumentException.class,()->new SignalDefinition(ID,"local-unit-test",
+                definition.blueprintId(),1,"L1","pump","pressure","bar",
+                SourceKind.SIMULATED,Duration.ofSeconds(Long.MAX_VALUE)));
         assertDoesNotThrow(()->new SignalDefinition(ID,"local-unit-test",
                 definition.blueprintId(),1,"L1","pump","pressure","bar",
                 SourceKind.SIMULATED,Duration.ofMillis(1)));
