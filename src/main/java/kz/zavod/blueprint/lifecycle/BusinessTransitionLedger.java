@@ -56,6 +56,52 @@ public class BusinessTransitionLedger {
                 reasonCode,correlationId,contentHash,previousHash,eventHash,at));
     }
 
+    /**
+     * Bounded synchronous qualification of an idempotent activation receipt.
+     * Verify the target, its immediate chain links and their revision digests.
+     * Complexity is O(1) per replay; full history integrity remains an explicit
+     * offline verifySite() operation and MUST be scheduled independently.
+     */
+    @Transactional(readOnly=true)
+    public void verifyReceiptEvent(String siteId,String commandKey) {
+        var target=events.findBySiteIdAndCommandKey(siteId,commandKey)
+                .orElseThrow(()->new IllegalStateException("MISSING_BUSINESS_TRANSITION"));
+        validateEvent(siteId,target);
+        if(target.sequenceNo()==1) {
+            if(!target.previousEventHash().isEmpty())
+                throw new IllegalStateException("BUSINESS_LEDGER_CHAIN_BROKEN");
+        } else {
+            var previous=events.findBySiteIdAndSequenceNo(siteId,target.sequenceNo()-1)
+                    .orElseThrow(()->new IllegalStateException("BUSINESS_LEDGER_CHAIN_BROKEN"));
+            validateEvent(siteId,previous);
+            if(!previous.eventHash().equals(target.previousEventHash()))
+                throw new IllegalStateException("BUSINESS_LEDGER_CHAIN_BROKEN");
+        }
+        events.findBySiteIdAndSequenceNo(siteId,target.sequenceNo()+1).ifPresent(next->{
+            validateEvent(siteId,next);
+            if(!target.eventHash().equals(next.previousEventHash()))
+                throw new IllegalStateException("BUSINESS_LEDGER_CHAIN_BROKEN");
+        });
+    }
+
+    private void validateEvent(String siteId,BusinessTransitionEntity event) {
+        String calculated=fingerprint(event.id(),event.siteId(),Long.toString(event.sequenceNo()),
+                event.eventType().name(),event.actorId(),event.blueprintId(),
+                Long.toString(event.revisionNo()),event.previousSetId(),event.newSetId(),
+                event.reason(),event.commandKey(),event.reasonCode(),event.correlationId(),
+                event.contentHash(),event.previousEventHash(),event.createdAt().toString());
+        if(!event.siteId().equals(siteId)||!calculated.equals(event.eventHash()))
+            throw new IllegalStateException("BUSINESS_LEDGER_HASH_MISMATCH");
+        UUID revisionId=UUID.fromString(event.blueprintId());
+        drafts.loadRevision(revisionId,event.revisionNo());
+        String authoritative=revisions.findByBlueprintIdAndRevisionNo(
+                event.blueprintId(),event.revisionNo())
+                .orElseThrow(()->new IllegalStateException("MISSING_BLUEPRINT_REVISION"))
+                .contentHash();
+        if(!authoritative.equals(event.contentHash()))
+            throw new IllegalStateException("BUSINESS_LEDGER_REVISION_HASH_MISMATCH");
+    }
+
     @Transactional(readOnly=true)
     public void verifySite(String siteId) {
         long expected=1L;
@@ -63,23 +109,7 @@ public class BusinessTransitionLedger {
         for(var event:events.findBySiteIdOrderBySequenceNoAsc(siteId)) {
             if(event.sequenceNo()!=expected||!previousHash.equals(event.previousEventHash()))
                 throw new IllegalStateException("BUSINESS_LEDGER_CHAIN_BROKEN");
-            String calculated=fingerprint(event.id(),event.siteId(),Long.toString(event.sequenceNo()),
-                    event.eventType().name(),event.actorId(),event.blueprintId(),
-                    Long.toString(event.revisionNo()),event.previousSetId(),event.newSetId(),
-                    event.reason(),event.commandKey(),event.reasonCode(),event.correlationId(),event.contentHash(),
-                    event.previousEventHash(),event.createdAt().toString());
-            if(!event.siteId().equals(siteId)||!calculated.equals(event.eventHash()))
-                throw new IllegalStateException("BUSINESS_LEDGER_HASH_MISMATCH");
-            // Chain hashes alone are insufficient: compare anchored revision hash
-            // against verified, persisted immutable Blueprint bytes.
-            UUID revisionId=UUID.fromString(event.blueprintId());
-            drafts.loadRevision(revisionId,event.revisionNo());
-            String authoritative=revisions.findByBlueprintIdAndRevisionNo(
-                    event.blueprintId(),event.revisionNo())
-                    .orElseThrow(()->new IllegalStateException("MISSING_BLUEPRINT_REVISION"))
-                    .contentHash();
-            if(!authoritative.equals(event.contentHash()))
-                throw new IllegalStateException("BUSINESS_LEDGER_REVISION_HASH_MISMATCH");
+            validateEvent(siteId,event);
             previousHash=event.eventHash();
             expected++;
         }
